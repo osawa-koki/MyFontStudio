@@ -159,10 +159,12 @@ describe("readArchive のエラー", () => {
   });
   it("ファイル数・展開後のサイズの上限", async () => {
     const buf = await zipOf({ "project.json": projectJson(), "a.txt": "x".repeat(1000) });
-    await expect(readArchive(buf, { maxFiles: 1, maxTotalBytes: 1e9 })).rejects.toThrow(/多すぎ/);
-    await expect(readArchive(buf, { maxFiles: 10, maxTotalBytes: 500 })).rejects.toThrow(
-      /大きすぎ/,
-    );
+    await expect(
+      readArchive(buf, { maxFiles: 1, maxTotalBytes: 1e9, maxFileBytes: 1e9 }),
+    ).rejects.toThrow(/多すぎ/);
+    await expect(
+      readArchive(buf, { maxFiles: 10, maxTotalBytes: 500, maxFileBytes: 1e9 }),
+    ).rejects.toThrow(/大きすぎ/);
   });
   it("壊れたベクター JSON・想定外のパスはその文字だけ飛ばし、理由を返す", async () => {
     const glyphs = [
@@ -202,6 +204,51 @@ describe("readArchive のエラー", () => {
     json.font.familyName = "日本語";
     const { project } = await readArchive(await zipOf({ "project.json": JSON.stringify(json) }));
     expect(project.font.familyName).toBe("MyHandwriting");
+  });
+});
+
+describe("展開後のサイズを偽った zip（zip bomb）", () => {
+  /** 中央ディレクトリの「展開後のサイズ」を小さく書き換える */
+  function lie(buf: ArrayBuffer): ArrayBuffer {
+    const u8 = new Uint8Array(buf.slice(0));
+    const v = new DataView(u8.buffer);
+    const eocd = u8.length - 22;
+    let p = v.getUint32(eocd + 16, true);
+    for (let i = 0; i < v.getUint16(eocd + 10, true); i++) {
+      v.setUint32(p + 24, 10, true);
+      p += 46 + v.getUint16(p + 28, true) + v.getUint16(p + 30, true) + v.getUint16(p + 32, true);
+    }
+    return u8.buffer;
+  }
+  const big = () =>
+    JSON.stringify({
+      ...toProjectJson(sampleProject(), "x"),
+      glyphs: [],
+      previewText: "あ".repeat(300_000),
+    });
+
+  it("申告値は小さくても、実際に展開した大きさで止める（合計）", async () => {
+    const buf = lie(await zipOf({ "project.json": big() }));
+    expect(readZipEntries(buf)[0]!.uncompressedSize).toBe(10);
+    await expect(
+      readArchive(buf, { maxFiles: 10, maxTotalBytes: 100_000, maxFileBytes: 1e9 }),
+    ).rejects.toThrow(/大きすぎ/);
+  });
+  it("1 ファイルの上限", async () => {
+    const buf = await zipOf({ "project.json": big() });
+    await expect(
+      readArchive(buf, { maxFiles: 10, maxTotalBytes: 1e9, maxFileBytes: 100_000 }),
+    ).rejects.toThrow(/1 ファイル/);
+  });
+  it("ベクター JSON が上限を超えたら、その文字を飛ばさずに読み込みをやめる", async () => {
+    const json = toProjectJson(sampleProject(), "x");
+    const buf = await zipOf({
+      "project.json": JSON.stringify(json),
+      [vectorPath("U+53E3")]: JSON.stringify({ ...KUCHI, pad: "x".repeat(200_000) }),
+    });
+    await expect(
+      readArchive(buf, { maxFiles: 100, maxTotalBytes: 1e9, maxFileBytes: 100_000 }),
+    ).rejects.toThrow(/大きすぎ/);
   });
 });
 
