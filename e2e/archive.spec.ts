@@ -180,7 +180,7 @@ test("重い処理は Web Worker で行い、進み具合を出して取り消�
   const buffer = Buffer.from(await zip.generateAsync({ type: "uint8array" }));
 
   const workerLoaded = page.waitForRequest(/\/workers\/font\.worker\.js$/);
-  await page.goto("/");
+  await page.goto("./");
   await page
     .getByTestId("zip-input")
     .setInputFiles({ name: "many.zip", mimeType: "application/zip", buffer });
