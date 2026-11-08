@@ -13,3 +13,20 @@
 - 作業を zip に保存して、あとから続きを描ける（ブラウザにも自動保存する）
 
 仕様は [docs/SPEC.md](docs/SPEC.md) を参照。
+
+## 使う
+
+- GitHub Pages：https://osawa-koki.github.io/MyFontStudio/
+
+## 開発
+
+```bash
+cd ./frontend/
+npm ci
+npm run dev
+```
+
+| ビルドの環境変数 | 内容 |
+|---|---|
+| `VITE_ROUTER` | `hash` なら HashRouter（`#/editor`。GitHub Pages 用）。それ以外は BrowserRouter |
+| `BASE_PATH` | 配信するパス（既定 `/`。GitHub Pages では `/MyFontStudio/`） |

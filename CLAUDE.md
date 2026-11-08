@@ -64,6 +64,14 @@ npm run dev             # 開発サーバー
 - すべてのジョブに `timeout-minutes` を付ける。
 - Dependabot（`.github/dependabot.yml`）は github-actions・npm（`frontend/`）を週 1 回更新する。minor・patch はエコシステムごとに 1 つの PR にまとめる。
 
+### デプロイ
+
+| 先 | トリガー | 内容 |
+|---|---|---|
+| GitHub Pages（https://osawa-koki.github.io/MyFontStudio/ ） | `main` への push のうち、`frontend/`・`pages.yml` が変わったとき、手動（`pages.yml`） | `VITE_ROUTER=hash`・`BASE_PATH=/MyFontStudio/` でビルドしてデプロイする |
+
+- 画面を変えた PR のマージ後は、`pages.yml` の結果を確認する（`gh run list --workflow pages.yml --branch main --limit 1` → `gh run watch <run-id> --exit-status`）。
+
 ## 設計上の約束ごと
 
 - **ブラウザの外にデータを送らない**：手書きのデータを外部に送る処理・アクセス解析・外部 CDN を入れない。フォントやライブラリはすべてバンドルする。
