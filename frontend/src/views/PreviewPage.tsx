@@ -30,18 +30,21 @@ const MISSING_MODES: { id: MissingMode; label: string; help: string }[] = [
 export function PreviewPage() {
   const previewText = useProjectStore((s) => s.project.previewText);
   const queue = useProjectStore((s) => s.project.queue);
+  const glyphs = useProjectStore((s) => s.project.glyphs);
   const projectId = useProjectStore((s) => s.projectId);
   const setPreviewText = useProjectStore((s) => s.setPreviewText);
   const { family, chars, outlineCount } = useFontStore();
   const settings = usePreviewStore();
   const router = useRouter();
 
-  // 文章が空なら、作成済みの文字を連結したものから始める
+  // 文章が空なら、作成済みの文字を連結したものから始める。
+  // フォントの作り直し（300ms 後）を待たずに決まるよう、フォントではなくグリフから選ぶ
   useEffect(() => {
-    if (previewText === "" && chars.size > 0) {
-      setPreviewText(queue.filter((c) => chars.has(c)).join(""), { dirty: false });
+    const created = queue.filter((c) => (glyphs[c]?.strokes.length ?? 0) > 0);
+    if (previewText === "" && created.length > 0) {
+      setPreviewText(created.join(""), { dirty: false });
     }
-  }, [previewText, chars, queue, setPreviewText]);
+  }, [previewText, glyphs, queue, setPreviewText]);
 
   const segments = useMemo(() => splitPreviewText(previewText, chars), [previewText, chars]);
   const missing = useMemo(() => missingChars(previewText, chars), [previewText, chars]);
