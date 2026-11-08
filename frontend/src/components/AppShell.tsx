@@ -7,6 +7,7 @@ import { useUnsavedWarning } from "../features/unsavedWarning";
 import { useZipDrop } from "../features/zipDrop";
 import { DialogHost } from "./DialogHost";
 import { Header } from "./Header";
+import { TaskProgress } from "./TaskProgress";
 import { Toasts } from "./Toasts";
 
 /** すべてのページの共通の外枠（ヘッダー・通知・ダイアログ）。プレビュー用のフォントの生成と zip のドロップもここで扱う */
@@ -23,6 +24,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         MyFontStudio — 手書きのデータはブラウザの外に送信されません
       </footer>
       <Toasts />
+      <TaskProgress />
       <DialogHost />
     </div>
   );
