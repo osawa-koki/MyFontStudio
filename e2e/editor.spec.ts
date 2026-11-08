@@ -160,3 +160,51 @@ test("プリセットで文字群を追加でき、← → で移動できる", 
   await page.keyboard.press("ArrowLeft");
   await expect(page.getByTestId("current-char")).toHaveText("0");
 });
+
+test("文字一覧を並び替え・検索・絞り込みできる", async ({ page }) => {
+  await page.goto("/editor");
+  await page.getByLabel("追加する文字列").fill("澤あAア1大");
+  await page.getByLabel("追加する文字列").press("ControlOrMeta+Enter");
+  const region = page.getByRole("region", { name: "文字一覧" });
+  const chars = async () =>
+    (await region.getByRole("listitem").allInnerTexts()).map((t) =>
+      t.trim().charAt(0),
+    );
+  expect(await chars()).toEqual(["澤", "あ", "A", "ア", "1", "大"]);
+
+  // 「あ」「大」を作成する（大 → あ の順に保存）
+  for (const c of ["大", "あ"]) {
+    await region.getByRole("button", { name: new RegExp(`^${c}（`) }).click();
+    await drawStroke(page, [
+      [200, 500],
+      [800, 500],
+    ]);
+    await page.getByRole("button", { name: "保存", exact: true }).click();
+  }
+
+  await page.getByLabel("並び順").selectOption("codepoint");
+  expect(await chars()).toEqual(["1", "A", "あ", "ア", "大", "澤"]);
+  await page.getByRole("button", { name: /昇順（クリックで降順）/ }).click();
+  expect(await chars()).toEqual(["澤", "大", "ア", "あ", "A", "1"]);
+  await page.getByLabel("並び順").selectOption("updated");
+  // 降順：新しく保存したもの（あ）が先頭。未作成は最後
+  expect(await chars()).toEqual(["あ", "大", "澤", "A", "ア", "1"]);
+
+  await page.getByLabel("作成状況").selectOption("uncreated");
+  expect(await chars()).toEqual(["澤", "A", "ア", "1"]);
+  await expect(region).toContainText("表示 4 文字");
+  await page.getByLabel("文字の種類").selectOption("latin");
+  expect(await chars()).toEqual(["A"]);
+  await page.getByLabel("文字の種類").selectOption("all");
+  await page.getByLabel("作成状況").selectOption("all");
+
+  await page.getByLabel("文字一覧を検索").fill("大澤太郎");
+  expect(await chars()).toEqual(["大", "澤"]);
+  await page.getByLabel("文字一覧を検索").fill("U+30");
+  expect(await chars()).toEqual(["あ", "ア"]);
+  await page.getByLabel("文字一覧を検索").fill("x");
+  await expect(region).toContainText("条件に合う文字がありません");
+  await region.getByRole("button", { name: "絞り込みを解除" }).click();
+  await expect(region.getByRole("listitem")).toHaveCount(6);
+  await expect(page.getByLabel("文字一覧を検索")).toHaveValue("");
+});

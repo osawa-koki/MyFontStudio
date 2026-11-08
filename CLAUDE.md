@@ -5,7 +5,7 @@
 - `frontend/`：Next.js（App Router、静的エクスポート `output: 'export'`）+ React + TypeScript（strict）+ Tailwind CSS の画面。コードはすべてここにある。サーバーは持たない（Server Actions・API ルートなどサーバーが要る機能は使わない）
   - `src/app/`：Next.js のページ（`layout.tsx`・`page.tsx`・`editor/page.tsx`・`preview/page.tsx`・`not-found.tsx`・`icon.svg`）。中身は `src/views/` を呼ぶだけ
   - `src/lib/`：ロジック（純粋な関数。React に依存させない。テストはここに書く）
-    - `project/`：プロジェクトの初期値・名前の直し方・コードポイントの表記（`project.ts`）、文字列の取り込み・プリセット・次の未作成の文字（`chars.ts`）、適用画面の文章の分け方（`preview.ts`）
+    - `project/`：プロジェクトの初期値・名前の直し方・コードポイントの表記（`project.ts`）、文字列の取り込み・プリセット・次の未作成の文字（`chars.ts`）、適用画面の文章の分け方（`preview.ts`）、文字一覧の並び替え・絞り込み（`queueView.ts`）
     - `stroke/`：ストロークの記録（丸め・間引き・em 座標への変換・筆圧の決め方）、元に戻す/やり直しの履歴（`history.ts`）、Canvas のガイド線（`guides.ts`）
     - `glyph/`：ストローク → 輪郭 → `GlyphOutline`（仕様 5 章）。`outline.ts` が手順（perfect-freehand → polygon-clipping の union → Douglas–Peucker → 中点の二次ベジェ → フォント座標・向き）、`width.ts` が送り幅（East Asian Width）、`path.ts` が SVG の path、`constants.ts` がメトリクスなどの値
     - `font/`：フォントの生成（仕様 6 章）。`build.ts` が入口（`GlyphOutline[]` とフォントの設定 → ArrayBuffer。fonteditor-core・opentype.js が大きいので、画面からは動的 import で読み、別のチャンクにする）、`outlines.ts` がプロジェクトから輪郭を集める処理、`ttf.ts`（fonteditor-core）・`otf.ts`（opentype.js）がアダプタ、`sfnt.ts` が書き出したあとのテーブルの差し替え（name・OS/2）と書き換え（head・hhea・maxp・post）、`glyphs.ts` が .notdef・スペースを含むグリフの一覧、`spec.ts` が名前とバージョン、`metrics.ts` がメトリクスの値、`fontface.ts` がプレビュー用の FontFace の登録
@@ -13,7 +13,7 @@
     - `projects/`：プロジェクトの保存先（IndexedDB。保存先は差し替えられる）。プロジェクトごとのデータ（`myfontstudio:project:{uuid}`）と一覧（`myfontstudio:projects`）を 1 つのトランザクションで書く。読み込むときにスキーマで確かめる。前の版の自動保存の引き継ぎ、デバウンス、`?uuid=` の URL
     - `testing/fixtures.ts`：テスト用の固定のストローク（「口」「十」「。」「A」）
   - `src/features/`：ストアと lib をつなぐ処理（`fontPreview.ts`：グリフが変わったら 300ms 待ってプレビュー用の .ttf を作り直す、`actions.ts`：フォントのダウンロード、`glyphActions.ts`：描きかけの保存、`archiveActions.ts`・`zipDrop.ts`・`png.ts`：zip の保存・読み込み・ドラッグ＆ドロップ・プレビュー PNG、`unsavedWarning.ts`：描きかけのストローク・終わっていない保存があるときの beforeunload の警告、`projects.ts`：開いているプロジェクトの保存（文字の追加などはすぐ、文章などは 500ms 待つ。書き込みは 1 本の列で順に行う）、URL の `?uuid=` からの読み込み（`useProjectFromUrl`。入力・プレビューは `ProjectGate` と Suspense で囲む）、一覧・削除、zip を新しいプロジェクトとして開く）
-  - `src/store/`：zustand のストア（`projectStore`：プロジェクトの状態、`fontStore`：プレビュー用のフォント（FontFace の名前・作成済みの文字）、`previewStore`：適用画面の表示設定、`editorStore`：入力ページの描きかけ（文字ごとの履歴とペン。保存するまでプロジェクトに入れない）、`uiStore`：通知・確認ダイアログ）
+  - `src/store/`：zustand のストア（`projectStore`：プロジェクトの状態、`fontStore`：プレビュー用のフォント（FontFace の名前・作成済みの文字）、`previewStore`：適用画面の表示設定、`queueViewStore`：文字一覧の並び替え・絞り込み、`editorStore`：入力ページの描きかけ（文字ごとの履歴とペン。保存するまでプロジェクトに入れない）、`uiStore`：通知・確認ダイアログ）
     - zustand 5 では、セレクターが毎回新しいオブジェクトを返すと無限に再描画される。組み立てが要る値は、値を選んでから `useMemo` で作る（`editorStore` の `useHistory`・`usePen`）
   - `src/types/project.ts`：プロジェクト・グリフの型（zip の JSON と同じ形）
   - `src/views/`・`src/components/`：画面（`src/pages/` は Next.js の Pages Router と衝突するので使わない）。入力・プレビューと、ストアを使う部品はクライアントコンポーネント（`"use client"`）。共通の外枠は `AppShell`。`DrawingCanvas` は 2 枚の Canvas（下：ガイド・お手本・確定したストローク、上：描いている途中）で、各ストロークの輪郭を nonzero で塗る
