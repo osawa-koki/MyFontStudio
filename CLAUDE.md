@@ -9,6 +9,8 @@
   - `src/types/project.ts`：プロジェクト・グリフの型（zip の JSON と同じ形）
   - `src/pages/`・`src/components/`：画面
   - `src/router.tsx`：ルーティング。`VITE_ROUTER=hash` なら HashRouter（GitHub Pages）、それ以外は BrowserRouter
+- `Dockerfile`・`nginx/default.conf.template`・`render.yaml`：Node.js でビルド → 非 root の Nginx で配信（SPA のフォールバック・セキュリティヘッダー・CSP・`/healthz`）。Render 用
+- `e2e/`：動いているサーバー（コンテナ）に対する Playwright のテスト。応答とヘッダー（`server.spec.ts`）、ブラウザでの操作（`ui.spec.ts`）。`fixtures.ts` の `test` を使うと、コンソールのエラー（CSP の違反など）があれば失敗する
 - `docs/SPEC.md`：仕様書。仕様を変えたら、本文と「12. 仕様の修正履歴」を直す
 - Node.js のバージョンは `frontend/.node-version` で固定している
 - TypeScript は 6.0 系にとどめている（typescript-eslint が 7 に対応していないため。Dependabot でも上げない）
@@ -50,26 +52,39 @@ npm run lint            # ESLint と Prettier（直すときは npm run format�
 npm run test:coverage   # 単体テストとカバレッジの下限（vite.config.ts の coverage.thresholds）
 npm run build
 npm run dev             # 開発サーバー
+
+# Docker と E2E（リポジトリのルートで）
+docker build -t myfontstudio .
+docker run -d --name app -e PORT=8080 -p 8080:8080 myfontstudio
+cd ./e2e/ && npm ci && npx playwright install chromium
+npm run typecheck
+BASE_URL=http://localhost:8080 npm test
+docker rm -f app
 ```
+
+- 画面の変更は、`e2e/ui.spec.ts` で操作を確かめる。CSP（`script-src 'self'`・`style-src 'self'`）に違反しないよう、インラインのスクリプト・`<style>`・HTML の `style` 属性を使わない（React の `style` プロパティは CSSOM で設定されるので使ってよい）。
 
 ## CI（GitHub Actions）
 
 | ワークフロー | トリガー | 内容 |
 |---|---|---|
 | `frontend-ci.yml` | すべての PR | 型チェック、ESLint・Prettier、単体テストとカバレッジ（`lib/`・`store/` の行の 85% が下限）、ビルド（BrowserRouter と HashRouter の 2 通り） |
+| `docker-ci.yml` | すべての PR | E2E テストの型チェック。イメージをビルドしてコンテナを起動し、Playwright のテストを実行する（失敗したらレポートをアーティファクトに残す） |
 | `audit.yml` | `frontend/package*.json` を変えた PR、週 1 回（月曜 3:30 JST）、手動 | `npm audit --omit=dev --audit-level=high`（画面に入る依存。開発用を含む結果はサマリーに出すだけ） |
 
 - actions は、すべてコミットの SHA で固定し、行の終わりにバージョンを書く（例：`uses: actions/checkout@<40 文字の SHA> # v7.0.1`）。SHA は `gh api repos/<owner>/<repo>/commits/<タグ> --jq .sha` で調べる。
 - ワークフローを変えたら actionlint で確認する（`docker run --rm -v "$PWD:/repo:ro" -w /repo rhysd/actionlint:1.7.7 -no-color`）。
 - すべてのジョブに `timeout-minutes` を付ける。
-- Dependabot（`.github/dependabot.yml`）は github-actions・npm（`frontend/`）を週 1 回更新する。minor・patch はエコシステムごとに 1 つの PR にまとめる。
+- Dependabot（`.github/dependabot.yml`）は github-actions・npm（`frontend/`・`e2e/`）・docker（`Dockerfile` の Nginx。ダイジェストで固定している）を週 1 回更新する。minor・patch はエコシステムごとに 1 つの PR にまとめる。Node.js（`frontend/.node-version` と `Dockerfile` の `node`）は対象外なので、上げるときは手で 2 つをそろえる。
 
 ### デプロイ
 
 | 先 | トリガー | 内容 |
 |---|---|---|
+| Render | `main` への push のうち、`frontend/`・`nginx/`・`Dockerfile`・`.dockerignore` が変わったとき（Render 側の自動デプロイ、`render.yaml` の `buildFilter`） | `render.yaml` の設定で Docker イメージをビルドして動かす |
 | GitHub Pages（https://osawa-koki.github.io/MyFontStudio/ ） | `main` への push のうち、`frontend/`・`pages.yml` が変わったとき、手動（`pages.yml`） | `VITE_ROUTER=hash`・`BASE_PATH=/MyFontStudio/` でビルドしてデプロイする |
 
+- GitHub Pages では HTTP ヘッダー（CSP など）を付けられない。セキュリティヘッダーは Nginx（Render）でだけ付く。
 - 画面を変えた PR のマージ後は、`pages.yml` の結果を確認する（`gh run list --workflow pages.yml --branch main --limit 1` → `gh run watch <run-id> --exit-status`）。
 
 ## 設計上の約束ごと

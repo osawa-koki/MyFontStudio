@@ -17,6 +17,8 @@
 ## 使う
 
 - GitHub Pages：https://osawa-koki.github.io/MyFontStudio/
+- Docker：`docker build -t myfontstudio . && docker run --rm -p 8080:8080 myfontstudio` → http://localhost:8080/
+  - Nginx で配信する（待ち受けるポートは環境変数 `PORT`、既定 8080）。Render には `render.yaml` の Blueprint でデプロイできる
 
 ## 開発
 

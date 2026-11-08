@@ -1,0 +1,19 @@
+# Render の Blueprint。ダッシュボードでこのリポジトリを接続すると、main への push のうち、buildFilter のパスが変わったときにデプロイされる
+services:
+  - type: web
+    name: myfontstudio
+    runtime: docker
+    # 静的ファイルを返すだけなので free で足りる（フォントの生成はブラウザで行う）
+    plan: free
+    branch: main
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /healthz
+    autoDeployTrigger: commit
+    # イメージに入るもの（Dockerfile が COPY するもの）が変わったときだけビルドしてデプロイする
+    buildFilter:
+      paths:
+        - frontend/**
+        - nginx/**
+        - Dockerfile
+        - .dockerignore

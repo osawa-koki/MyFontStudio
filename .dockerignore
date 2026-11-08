@@ -1,0 +1,11 @@
+.git
+.github
+**/node_modules
+**/dist
+**/coverage
+**/out
+*.md
+e2e
+.claude
+.vscode
+docs
