@@ -49,6 +49,9 @@ jobs:
         env:
           REPOSITORY: ${{ github.repository }}
         run: echo "name=ghcr.io/${REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      # arm64 のイメージを作るため（実行のステージの apk upgrade をエミュレーションで動かす）
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Log in to GHCR
@@ -71,6 +74,8 @@ jobs:
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
+          # Apple Silicon の Mac や arm64 のサーバーでもエミュレーションなしで動くよう、両方を作る
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -104,6 +109,13 @@ jobs:
     permissions:
       contents: read
       packages: read
+    # アーキテクチャごとに調べる（パッケージはアーキテクチャごとに違いうる）
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [ linux/amd64, linux/arm64 ]
+    env:
+      TRIVY_PLATFORM: ${{ matrix.platform }}
     steps:
       - name: Scan the image with Trivy
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -120,7 +132,7 @@ jobs:
         if: always()
         run: |
           {
-            echo '### イメージの脆弱性（修正済みの CRITICAL・HIGH）'
+            echo "### イメージの脆弱性（修正済みの CRITICAL・HIGH、${TRIVY_PLATFORM}）"
             echo '```'
             cat trivy.txt 2>/dev/null || echo "（結果がない）"
             echo '```'
