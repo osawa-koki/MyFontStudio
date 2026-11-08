@@ -1,10 +1,12 @@
+"use client";
+
 import { useEffect, useState } from "react";
-import { Link } from "react-router";
+import Link from "next/link";
 import { CharQueue } from "../components/CharQueue";
 import { DrawingCanvas } from "../components/DrawingCanvas";
 import { PenSettings } from "../components/PenSettings";
 import { isFullWidthChar } from "../lib/glyph/width";
-import { commitDraft } from "../app/glyphActions";
+import { commitDraft } from "../features/glyphActions";
 import { PRESETS, isCreated, nextUncreated, parseInputChars, prevChar } from "../lib/project/chars";
 import { toCodepointLabel } from "../lib/project/project";
 import { canRedo, canUndo, isDirty } from "../lib/stroke/history";
@@ -186,7 +188,7 @@ export function EditorPage() {
             className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-green-300 bg-green-50 p-3"
           >
             <span className="font-bold text-green-900">すべての文字を作成しました 🎉</span>
-            <Link to="/preview" className="btn btn-primary">
+            <Link href="/preview" className="btn btn-primary">
               プレビューで確かめる
             </Link>
           </div>

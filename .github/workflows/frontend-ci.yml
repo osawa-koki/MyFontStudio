@@ -29,6 +29,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Type check
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
         run: npm run typecheck
       # ESLint と Prettier
       - name: Lint
@@ -45,12 +47,14 @@ jobs:
           python3 -m venv /tmp/fontcheck
           /tmp/fontcheck/bin/pip install -q -r scripts/requirements-fonts.txt
           npm run fonts:sample
-          /tmp/fontcheck/bin/python scripts/check-fonts.py out/Sample.ttf out/Sample.otf
-      # Docker（Nginx）用と GitHub Pages 用の 2 通りでビルドできることを確かめる
-      - name: Build (BrowserRouter)
-        run: npm run build
-      - name: Build (HashRouter, GitHub Pages)
+          /tmp/fontcheck/bin/python scripts/check-fonts.py sample-fonts/Sample.ttf sample-fonts/Sample.otf
+      # Docker（Nginx。ルートで配信）用と GitHub Pages（/<リポジトリ名> で配信）用の 2 通りでビルドできることを確かめる
+      - name: Build (root)
         env:
-          VITE_ROUTER: hash
-          BASE_PATH: /${{ github.event.repository.name }}/
+          NEXT_TELEMETRY_DISABLED: "1"
+        run: npm run build
+      - name: Build (basePath, GitHub Pages)
+        env:
+          BASE_PATH: /${{ github.event.repository.name }}
+          NEXT_TELEMETRY_DISABLED: "1"
         run: npm run build

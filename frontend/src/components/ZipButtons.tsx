@@ -1,11 +1,11 @@
 import { useRef, useState } from "react";
-import { useNavigate } from "react-router";
-import { openZip, saveZip } from "../app/archiveActions";
+import { useRouter } from "next/navigation";
+import { openZip, saveZip } from "../features/archiveActions";
 
 /** ヘッダーの「zip で保存」「zip を開く」 */
 export function ZipButtons() {
   const inputRef = useRef<HTMLInputElement>(null);
-  const navigate = useNavigate();
+  const router = useRouter();
   const [busy, setBusy] = useState(false);
 
   const run = async (f: () => Promise<unknown>) => {
@@ -42,7 +42,7 @@ export function ZipButtons() {
           e.target.value = "";
           if (file) {
             void run(async () => {
-              if (await openZip(file)) void navigate("/editor");
+              if (await openZip(file)) router.push("/editor");
             });
           }
         }}

@@ -1,12 +1,12 @@
 // テスト用の固定のストロークから .ttf と .otf を書き出す（fontTools・OTS で中身を確かめるため）。
-// 使い方：npm run fonts:sample → out/Sample.ttf・out/Sample.otf
+// 使い方：npm run fonts:sample → sample-fonts/Sample.ttf・sample-fonts/Sample.otf（out/ は Next.js の書き出し先）
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { glyphToOutline } from "../src/lib/glyph/outline";
 import { buildFont } from "../src/lib/font/build";
 import { JUU, KUCHI, LATIN_A, MARU, line, makeGlyph } from "../src/lib/testing/fixtures";
 
-const outDir = join(import.meta.dirname, "..", "out");
+const outDir = join(import.meta.dirname, "..", "sample-fonts");
 mkdirSync(outDir, { recursive: true });
 
 const glyphs = [
@@ -28,5 +28,5 @@ const now = new Date("2026-11-08T12:00:00Z");
 for (const format of ["ttf", "otf"] as const) {
   const buf = buildFont(format, outlines, font, now)!;
   writeFileSync(join(outDir, `Sample.${format}`), new Uint8Array(buf));
-  console.log(`out/Sample.${format}: ${buf.byteLength} bytes`);
+  console.log(`sample-fonts/Sample.${format}: ${buf.byteLength} bytes`);
 }

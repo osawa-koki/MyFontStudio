@@ -22,7 +22,7 @@ test("グリフがないときは入力ページへ案内する", async ({ page 
     page.getByText("まだ文字がありません。入力ページで文字を作成してください"),
   ).toBeVisible();
   await page.getByRole("link", { name: "入力ページへ" }).click();
-  await expect(page).toHaveURL(/\/editor$/);
+  await expect(page).toHaveURL(/\/editor\/?$/);
 });
 
 test("保存した文字が手書きのフォントで表示され、未作成の文字を表示・追加できる", async ({
@@ -77,7 +77,7 @@ test("保存した文字が手書きのフォントで表示され、未作成�
   await missing
     .getByRole("button", { name: "入力ページに追加して描く" })
     .click();
-  await expect(page).toHaveURL(/\/editor$/);
+  await expect(page).toHaveURL(/\/editor\/?$/);
   await expect(page.getByTestId("current-char")).toHaveText("太");
   await expect(
     page.getByRole("region", { name: "文字一覧" }).getByRole("listitem"),

@@ -24,15 +24,17 @@
 
 ## 2. 技術スタックとディレクトリ構成
 
-Vite + React + TypeScriptの静的SPAとして実装する。ビルド成果物は任意の静的ホスティングに置けること。本リポジトリでは次の2つで配信する（10.4）。
+Next.js（App Router）+ React + TypeScriptで実装し、静的エクスポート（`output: 'export'`）でページごとのHTMLを事前に作る。サーバーは持たない（手書きのデータを外部に送らないため。Server ActionsやAPIルートなど、サーバーが必要な機能は使わない）。ビルド成果物は任意の静的ホスティングに置けること。本リポジトリでは次の2つで配信する（10.4）。
 
-- **GitHub Pages**：`main` へのpushでGitHub Actionsからデプロイ。HashRouter（`#/editor`）を使う
-- **Docker（Nginx）**：ルートの `Dockerfile` でビルドしてNginxで配信し、Render（`render.yaml`）にデプロイする。BrowserRouter（`/editor`）を使う
+- **GitHub Pages**：`main` へのpushでGitHub Actionsからデプロイ。`basePath` を `/MyFontStudio` にする
+- **Docker（Nginx）**：ルートの `Dockerfile` でビルドしてNginxで配信し、Render（`render.yaml`）にデプロイする
+
+使い方ページはサーバーコンポーネント（説明文はHTMLに書き出す）、入力ページと適用画面はCanvas・FontFace・IndexedDBなどブラウザの機能を使うのでクライアントコンポーネントとする。
 
 | 用途 | ライブラリ | 備考 |
 | --- | --- | --- |
-| フレームワーク | React 19 / TypeScript（strict）/ Vite |  |
-| ルーティング | react-router | BrowserRouterとHashRouterをビルド時の環境変数 `VITE_ROUTER`（`browser` / `hash`）で切り替える |
+| フレームワーク | Next.js（App Router、静的エクスポート）/ React 19 / TypeScript（strict） | `trailingSlash: true`（`/editor/` → `editor/index.html`） |
+| ルーティング | Next.jsのファイルベースのルーティング | `src/app/` にページを置く |
 | 状態管理 | zustand | プロジェクト状態を全ページで共有 |
 | フォント生成（.ttf） | fonteditor-core | TrueType（glyf）の.ttfを書き出す。メインの出力 |
 | フォント生成（.otf） | opentype.js | CFFアウトラインの.otfを書き出す。補助の出力 |
@@ -43,7 +45,7 @@ Vite + React + TypeScriptの静的SPAとして実装する。ビルド成果物�
 | 全角・半角の判定 | get-east-asian-width | UnicodeのEast Asian Width |
 | 自動保存 | idb-keyval（IndexedDB） | リロード対策の保険。正式な保存はzip |
 | スタイル | Tailwind CSS |  |
-| テスト | Vitest | 変換・生成・zipのロジックに単体テスト |
+| テスト | Vitest / Playwright | 変換・生成・zipのロジックに単体テスト（Vitest）、配信したサイトに対するE2E（Playwright） |
 
 **ディレクトリ構成（推奨）**
 
@@ -51,11 +53,13 @@ Vite + React + TypeScriptの静的SPAとして実装する。ビルド成果物�
 
 ```
 frontend/src/
-  pages/
+  app/                   # Next.js のページ（layout.tsx・page.tsx・editor/page.tsx・preview/page.tsx）
+  views/
     GuidePage.tsx        # 使い方
     EditorPage.tsx       # 入力ページ
     PreviewPage.tsx      # 適用画面
   components/
+    AppShell.tsx         # 共通の外枠（ヘッダー・通知・ダイアログ）
     Header.tsx           # ナビ＋保存/読込ボタン
     CharQueue.tsx        # 文字一覧（作成状況付き）
     DrawingCanvas.tsx    # 手書きCanvas
@@ -78,7 +82,7 @@ frontend/src/
 
 3画面構成とし、共通ヘッダーからいつでも移動・保存・読込ができるようにする。
 
-パスはBrowserRouterのときのもの。HashRouter（GitHub Pages）では `#/editor` のようになる。
+各ページは静的なHTMLとして書き出す。GitHub Pagesでは先頭に `/MyFontStudio` が付く。
 
 | パス | 画面 | 内容 |
 | --- | --- | --- |
@@ -436,10 +440,10 @@ textareaに入力した文章を、生成中のフォントでその下に表示
 
 | 先 | 方法 | ルーター |
 | --- | --- | --- |
-| GitHub Pages | `main` へのpushで `pages.yml` がビルドしてデプロイ（`base` はリポジトリ名） | HashRouter |
-| Render | ルートの `Dockerfile`（Node.jsでビルド → 非rootのNginxで配信。`PORT` で待ち受け）。`render.yaml` のBlueprint | BrowserRouter（Nginxで `index.html` にフォールバック） |
+| GitHub Pages | `main` へのpushで `pages.yml` がビルドしてデプロイ | `basePath` は `/MyFontStudio` |
+| Render | ルートの `Dockerfile`（Node.jsで静的エクスポート → 非rootのNginxで配信。`PORT` で待ち受け）。`render.yaml` のBlueprint | ルートで配信。ないページは `404.html` |
 
-Nginxでは、CSP（`default-src 'self'` を基本とし、外部への通信を禁止）などのセキュリティヘッダーを付け、ヘルスチェック用に `/healthz` を返す。
+Nginxでは、CSP（`default-src 'self'` を基本とし、外部への通信を禁止）などのセキュリティヘッダーを付け、ヘルスチェック用に `/healthz` を返す。Next.jsの静的エクスポートはHTMLにインラインのスクリプトを埋め込むので、ビルド時にそのSHA-256を集めて `script-src` に入れる（`'unsafe-inline'` は使わない）。
 
 ### 10.3 代替案：サーバーサイド生成
 
@@ -456,7 +460,7 @@ Nginxでは、CSP（`default-src 'self'` を基本とし、外部への通信を
 
 ### 11.1 実装ステップ
 
-1. **基盤**：Viteプロジェクト作成、ルーティング、共通ヘッダー、型定義（`types/project.ts`）、zustandストア
+1. **基盤**：Next.jsプロジェクト作成（静的エクスポート）、ルーティング、共通ヘッダー、型定義（`types/project.ts`）、zustandストア
 2. **変換と生成の検証**：`lib/glyph` と `lib/font` を実装し、固定のテスト用ストロークから.ttfと.otfを生成。fontTools（`ttx`）でテーブルの値を、OTS（ブラウザと同じフォントの検証器）でフォントとして正しいかを確かめる。WindowsとmacOSでインストールし、Wordで表示できること、.ttfが.docxに埋め込めること、WordのPDF保存で文字がテキストのまま（選択・検索できる状態で）残ることは、実機での手動確認とする（CIでは確かめられない）。満たせない場合は10.3の代替案を相談する
 3. **手書きCanvas**：描画、ガイド、お手本、元に戻す/やり直し、筆圧、ペン設定
 4. **入力ページ**：文字列取り込み、文字一覧、保存と次への遷移、プリセット追加、ショートカット
@@ -500,4 +504,5 @@ Nginxでは、CSP（`default-src 'self'` を基本とし、外部への通信を
 | 2026-11-08 | 6.2 | 送り幅が最小値に満たない半角文字は中央に置く。半角の判定（Na・H・N）を明記。East Asian WidthがAのラテン文字（é）は半角にする（Nのñと幅が変わるため） |
 | 2026-11-08 | 2・10.4 | 配信（GitHub PagesとDocker / Nginx / Render）とルーターの切り替えを追加。コードは `frontend/` に置く |
 | 2026-11-08 | 11 | Wordでの確認は実機での手動確認とし、fontTools・OTSでの検証を追加 |
+| 2026-11-08 | 2・3・10.4 | フロントエンドをVite + react-routerのSPAから、Next.js（App Router）の静的エクスポートに変更。ページごとのHTMLを事前に作る。GitHub PagesのHashRouterをやめ `basePath` にする。CSPはインラインのスクリプトのハッシュで許可する |
 | 2026-11-08 | 6 | .otfの「誤差なし」を訂正（opentype.jsが三次の制御点を整数に丸めるため、0.5単位以内の差が出る）。両形式の一致の基準を明確にした |

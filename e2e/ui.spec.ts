@@ -8,12 +8,12 @@ test("使い方ページから入力ページ・プレビューに移動でき�
     .getByRole("navigation", { name: "ページ" })
     .getByRole("link", { name: "入力" })
     .click();
-  await expect(page).toHaveURL(/\/editor$/);
+  await expect(page).toHaveURL(/\/editor\/?$/);
   await page
     .getByRole("navigation", { name: "ページ" })
     .getByRole("link", { name: "プレビュー" })
     .click();
-  await expect(page).toHaveURL(/\/preview$/);
+  await expect(page).toHaveURL(/\/preview\/?$/);
 });
 
 test("Canvas にマウスで描き、元に戻す・やり直し・クリアができる", async ({

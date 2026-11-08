@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { downloadFont } from "../app/actions";
+import { downloadFont } from "../features/actions";
 import { useFontStore } from "../store/fontStore";
 
 /** ヘッダーの「フォントをダウンロード」（.ttf / .otf を選ぶ。既定は .ttf） */
