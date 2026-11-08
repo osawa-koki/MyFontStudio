@@ -7,6 +7,7 @@
     - `project/`：プロジェクトの初期値・名前の直し方・コードポイントの表記
     - `stroke/`：ストロークの記録（丸め・間引き・em 座標への変換・筆圧の決め方）
     - `glyph/`：ストローク → 輪郭 → `GlyphOutline`（仕様 5 章）。`outline.ts` が手順（perfect-freehand → polygon-clipping の union → Douglas–Peucker → 中点の二次ベジェ → フォント座標・向き）、`width.ts` が送り幅（East Asian Width）、`path.ts` が SVG の path、`constants.ts` がメトリクスなどの値
+    - `font/`：フォントの生成（仕様 6 章）。`build.ts` が入口（`GlyphOutline[]` とフォントの設定 → ArrayBuffer）、`ttf.ts`（fonteditor-core）・`otf.ts`（opentype.js）がアダプタ、`sfnt.ts` が書き出したあとのテーブルの差し替え（name・OS/2）と書き換え（head・hhea・maxp・post）、`glyphs.ts` が .notdef・スペースを含むグリフの一覧、`spec.ts` が名前とバージョン、`metrics.ts` がメトリクスの値、`fontface.ts` がプレビュー用の FontFace の登録
     - `testing/fixtures.ts`：テスト用の固定のストローク（「口」「十」「。」「A」）
   - `src/store/`：zustand のストア（`projectStore`：プロジェクトの状態、`uiStore`：通知・確認ダイアログ）
   - `src/types/project.ts`：プロジェクト・グリフの型（zip の JSON と同じ形）
@@ -56,6 +57,12 @@ npm run test:coverage   # 単体テストとカバレッジの下限（vite.conf
 npm run build
 npm run dev             # 開発サーバー
 
+# 生成したフォントの確認（frontend/ で。fontTools と OTS が要る）
+python3 -m venv /tmp/fontcheck && /tmp/fontcheck/bin/pip install -r scripts/requirements-fonts.txt
+npm run fonts:sample    # 固定のストロークから out/Sample.ttf・out/Sample.otf を作る
+/tmp/fontcheck/bin/python scripts/check-fonts.py out/Sample.ttf out/Sample.otf
+/tmp/fontcheck/bin/ttx -t name -t OS/2 -o - out/Sample.ttf   # テーブルの中身を見る
+
 # Docker と E2E（リポジトリのルートで）
 docker build -t myfontstudio .
 docker run -d --name app -e PORT=8080 -p 8080:8080 myfontstudio
@@ -65,20 +72,21 @@ BASE_URL=http://localhost:8080 npm test
 docker rm -f app
 ```
 
+- フォントの生成（`lib/font`・`lib/glyph`）を変えたら、上の fontTools・OTS の確認を実行する（CI でも実行する）。opentype.js は Vite では ESM、Node（tsx・Vitest）では UMD として読まれるので、`otf.ts` のように両方に対応させる。
 - 画面の変更は、`e2e/ui.spec.ts` で操作を確かめる。CSP（`script-src 'self'`・`style-src 'self'`）に違反しないよう、インラインのスクリプト・`<style>`・HTML の `style` 属性を使わない（React の `style` プロパティは CSSOM で設定されるので使ってよい）。
 
 ## CI（GitHub Actions）
 
 | ワークフロー | トリガー | 内容 |
 |---|---|---|
-| `frontend-ci.yml` | すべての PR | 型チェック、ESLint・Prettier、単体テストとカバレッジ（`lib/`・`store/` の行の 85% が下限）、ビルド（BrowserRouter と HashRouter の 2 通り） |
+| `frontend-ci.yml` | すべての PR | 型チェック、ESLint・Prettier、単体テストとカバレッジ（`lib/`・`store/` の行の 85% が下限）、生成したフォントの確認（fontTools・OTS）、ビルド（BrowserRouter と HashRouter の 2 通り） |
 | `docker-ci.yml` | すべての PR | E2E テストの型チェック。イメージをビルドしてコンテナを起動し、Playwright のテストを実行する（失敗したらレポートをアーティファクトに残す） |
 | `audit.yml` | `frontend/package*.json` を変えた PR、週 1 回（月曜 3:30 JST）、手動 | `npm audit --omit=dev --audit-level=high`（画面に入る依存。開発用を含む結果はサマリーに出すだけ） |
 
 - actions は、すべてコミットの SHA で固定し、行の終わりにバージョンを書く（例：`uses: actions/checkout@<40 文字の SHA> # v7.0.1`）。SHA は `gh api repos/<owner>/<repo>/commits/<タグ> --jq .sha` で調べる。
 - ワークフローを変えたら actionlint で確認する（`docker run --rm -v "$PWD:/repo:ro" -w /repo rhysd/actionlint:1.7.7 -no-color`）。
 - すべてのジョブに `timeout-minutes` を付ける。
-- Dependabot（`.github/dependabot.yml`）は github-actions・npm（`frontend/`・`e2e/`）・docker（`Dockerfile` の Nginx。ダイジェストで固定している）を週 1 回更新する。minor・patch はエコシステムごとに 1 つの PR にまとめる。Node.js（`frontend/.node-version` と `Dockerfile` の `node`）は対象外なので、上げるときは手で 2 つをそろえる。
+- Dependabot（`.github/dependabot.yml`）は github-actions・npm（`frontend/`・`e2e/`）・pip（`frontend/scripts/requirements-fonts.txt`）・docker（`Dockerfile` の Nginx。ダイジェストで固定している）を週 1 回更新する。minor・patch はエコシステムごとに 1 つの PR にまとめる。Node.js（`frontend/.node-version` と `Dockerfile` の `node`）は対象外なので、上げるときは手で 2 つをそろえる。
 
 ### デプロイ
 
