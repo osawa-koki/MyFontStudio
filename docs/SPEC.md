@@ -485,6 +485,7 @@ textareaに入力した文章を、生成中のフォントでその下に表示
 | 先 | 方法 | ルーター |
 | --- | --- | --- |
 | GitHub Pages | `main` へのpushで `pages.yml` がビルドしてデプロイ | `basePath` は `/MyFontStudio` |
+| GitHub Container Registry | `main` へのpushで `publish.yml` がイメージをビルドして `ghcr.io/osawa-koki/myfontstudio`（タグ `main`・`sha-<コミット>`）にプッシュし、Trivyで脆弱性を調べる | ルートで配信 |
 | Render | ルートの `Dockerfile`（Node.jsで静的エクスポート → 非rootのNginxで配信。`PORT` で待ち受け）。`render.yaml` のBlueprint | ルートで配信。ないページは `404.html` |
 
 Nginxでは、CSP（`default-src 'self'` を基本とし、外部への通信を禁止）などのセキュリティヘッダーを付け、ヘルスチェック用に `/healthz` を返す。Next.jsの静的エクスポートはHTMLにインラインのスクリプトを埋め込むので、ビルド時にそのSHA-256を集めて `script-src` に入れる（`'unsafe-inline'` は使わない）。
@@ -552,6 +553,7 @@ Nginxでは、CSP（`default-src 'self'` を基本とし、外部への通信を
 | 2026-11-08 | 2・10.4 | 配信（GitHub PagesとDocker / Nginx / Render）とルーターの切り替えを追加。コードは `frontend/` に置く |
 | 2026-11-08 | 11 | Wordでの確認は実機での手動確認とし、fontTools・OTSでの検証を追加 |
 | 2026-11-08 | 2・3・10.4 | フロントエンドをVite + react-routerのSPAから、Next.js（App Router）の静的エクスポートに変更。ページごとのHTMLを事前に作る。GitHub PagesのHashRouterをやめ `basePath` にする。CSPはインラインのスクリプトのハッシュで許可する |
+| 2026-11-08 | 10.4 | mainへのマージでDockerイメージをGitHub Container Registryにプッシュする |
 | 2026-11-08 | 4.4・7 | 描いた履歴を文字ごとにプロジェクトに保存し、zipにも入れる（formatVersion 2、`rawdata/history/`）。描きかけの線も保存されるので、文字の移動に「そのまま移動」を足し、プロジェクトの切り替え・タブを閉じるときに描きかけでは確かめない |
 | 2026-11-08 | 3 | ブラウザに保存したデータの永続化（`navigator.storage.persist()`）と、保存の状態・使用量の表示 |
 | 2026-11-08 | 4.1 | 文字一覧の並び替え（登録順・文字コード順・更新日時順）と絞り込み（検索・作成状況・文字の種類）。「未作成のみ表示」は作成状況の絞り込みに置き換え |

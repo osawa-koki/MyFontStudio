@@ -98,10 +98,12 @@ docker rm -f app
 
 | 先 | トリガー | 内容 |
 |---|---|---|
+| GHCR（`ghcr.io/osawa-koki/myfontstudio`） | `main` への push のうち、`frontend/`・`nginx/`・`Dockerfile`・`.dockerignore`・`publish.yml` が変わったとき、手動（`publish.yml`） | イメージをビルドしてプッシュ（タグ `main`・`sha-<コミット>`）し、Trivy で調べ（修正済みの CRITICAL があれば失敗）、直近の 5 つ以外のバージョンを消す。イメージ名は小文字（リポジトリ名は大文字を含むため、ワークフローで小文字にする） |
 | Render | `main` への push のうち、`frontend/`・`nginx/`・`Dockerfile`・`.dockerignore` が変わったとき（Render 側の自動デプロイ、`render.yaml` の `buildFilter`） | `render.yaml` の設定で Docker イメージをビルドして動かす |
 | GitHub Pages（https://osawa-koki.github.io/MyFontStudio/ ） | `main` への push のうち、`frontend/`・`pages.yml` が変わったとき、手動（`pages.yml`） | `BASE_PATH=/MyFontStudio`（Next.js の `basePath`）でビルドし、`frontend/out` をデプロイする |
 
 - GitHub Pages では HTTP ヘッダー（CSP など）を付けられない。セキュリティヘッダーは Nginx（Render）でだけ付く。
+- イメージに入るものを変えた PR のマージ後は、`publish.yml` の結果も確認する（`gh run list --workflow publish.yml --branch main --limit 1` → `gh run watch <run-id> --exit-status`）。
 - 画面を変えた PR のマージ後は、`pages.yml` の結果を確認する（`gh run list --workflow pages.yml --branch main --limit 1` → `gh run watch <run-id> --exit-status`）。
 
 ## 設計上の約束ごと
