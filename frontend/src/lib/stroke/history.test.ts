@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { Stroke } from "../../types/project";
 import {
+  HISTORY_MAX_OPS,
   addStroke,
+  compactHistory,
   canRedo,
   canUndo,
   clearStrokes,
@@ -72,5 +74,29 @@ describe("history", () => {
     expect(isDirty(createHistory([s(2)]), saved)).toBe(true);
     expect(isDirty(addStroke(createHistory(saved), s(2)), saved)).toBe(true);
     expect(isDirty(createHistory(), undefined)).toBe(false);
+  });
+});
+
+describe("compactHistory", () => {
+  it("上限を超えたら古い操作をその時点の線にまとめ、今の線は変えない", () => {
+    let h = createHistory();
+    for (let i = 0; i < HISTORY_MAX_OPS; i++)
+      h = i % 100 === 99 ? clearStrokes(h) : addStroke(h, s(i));
+    const before = strokesOf(h);
+    h = addStroke(h, s(-1));
+    expect(h.ops.length).toBeLessThanOrEqual(HISTORY_MAX_OPS);
+    expect(strokesOf(h)).toEqual([...before, s(-1)]);
+    expect(h.position).toBe(h.ops.length);
+    expect(strokesOf(undo(h))).toEqual(before);
+  });
+  it("上限以下・まとめる位置より前に戻しているときはそのまま", () => {
+    const small = addStroke(createHistory(), s(1));
+    expect(compactHistory(small, 10)).toBe(small);
+    let h = createHistory();
+    for (let i = 0; i < 20; i++) h = addStroke(h, s(i));
+    for (let i = 0; i < 15; i++) h = undo(h);
+    expect(compactHistory(h, 10)).toBe(h);
+    const c = compactHistory(addStroke(createHistory([s(1), s(2)]), s(3)), 1);
+    expect(strokesOf(c)).toEqual([s(1), s(2), s(3)]);
   });
 });
