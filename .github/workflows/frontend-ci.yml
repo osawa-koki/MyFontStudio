@@ -39,6 +39,13 @@ jobs:
         run: |
           npm run test:coverage | tee coverage.txt
           { echo '### frontend のカバレッジ'; echo '```'; sed -n '/Coverage summary/,$p' coverage.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      # 固定のストロークから .ttf・.otf を作り、fontTools で両形式の値が一致すること、OTS の検証に通ることを確かめる
+      - name: Check generated fonts (fontTools, OTS)
+        run: |
+          python3 -m venv /tmp/fontcheck
+          /tmp/fontcheck/bin/pip install -q -r scripts/requirements-fonts.txt
+          npm run fonts:sample
+          /tmp/fontcheck/bin/python scripts/check-fonts.py out/Sample.ttf out/Sample.otf
       # Docker（Nginx）用と GitHub Pages 用の 2 通りでビルドできることを確かめる
       - name: Build (BrowserRouter)
         run: npm run build

@@ -11,10 +11,13 @@
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "test": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "fonts:sample": "tsx scripts/sample-fonts.ts"
   },
   "dependencies": {
+    "fonteditor-core": "^2.6.3",
     "get-east-asian-width": "^1.7.0",
+    "opentype.js": "^2.0.0",
     "perfect-freehand": "^1.2.3",
     "polygon-clipping": "^0.15.7",
     "react": "^19.3.1",
@@ -36,6 +39,7 @@
     "globals": "^17.14.0",
     "prettier": "^3.9.10",
     "tailwindcss": "^4.3.5",
+    "tsx": "^4.23.15",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.72.1",
     "vite": "^8.3.6",
