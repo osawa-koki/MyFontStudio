@@ -8,6 +8,8 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   build: {
     target: "es2022",
+    // フォント生成（fonteditor-core・opentype.js）は使うときに読み込む別のチャンクで、500KB を少し超える
+    chunkSizeWarningLimit: 600,
   },
   test: {
     environment: "node",

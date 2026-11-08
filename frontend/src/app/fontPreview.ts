@@ -1,0 +1,50 @@
+import { useEffect } from "react";
+import { collectOutlines } from "../lib/font/outlines";
+import { registerPreviewFont, unregisterPreviewFont } from "../lib/font/fontface";
+import { useFontStore } from "../store/fontStore";
+import { useProjectStore } from "../store/projectStore";
+
+/** グリフを保存・削除してから、フォントを作り直すまでの待ち時間 */
+export const REBUILD_DELAY_MS = 300;
+
+let generation = 0;
+
+/** プレビュー用の .ttf を作り、FontFace に登録する。輪郭はグリフ単位でキャッシュしているので、変わったグリフだけ計算し直す */
+export async function rebuildPreviewFont(): Promise<void> {
+  const my = ++generation;
+  const { project } = useProjectStore.getState();
+  const set = useFontStore.getState().set;
+  try {
+    const outlines = collectOutlines(project);
+    if (outlines.length === 0) {
+      unregisterPreviewFont();
+      set({ family: null, outlineCount: 0, chars: new Set(), error: null });
+      return;
+    }
+    // fonteditor-core・opentype.js は大きいので、使うときに読み込む（別のチャンクにする）
+    const { buildFont } = await import("../lib/font/build");
+    const buffer = buildFont("ttf", outlines, project.font)!;
+    const family = await registerPreviewFont(buffer);
+    // 待っている間に次の生成が始まっていたら、そちらに任せる
+    if (my !== generation) return;
+    set({
+      family,
+      outlineCount: outlines.length,
+      chars: new Set(outlines.map((o) => o.char)),
+      error: null,
+    });
+  } catch (e) {
+    console.error("フォントの生成に失敗しました", e);
+    if (my === generation) set({ error: e instanceof Error ? e.message : String(e) });
+  }
+}
+
+/** グリフ（とフォント名）が変わったら、少し待ってからフォントを作り直す。Layout で 1 回だけ使う */
+export function useFontPreview(): void {
+  const glyphs = useProjectStore((s) => s.project.glyphs);
+  const familyName = useProjectStore((s) => s.project.font.familyName);
+  useEffect(() => {
+    const timer = window.setTimeout(() => void rebuildPreviewFont(), REBUILD_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [glyphs, familyName]);
+}
