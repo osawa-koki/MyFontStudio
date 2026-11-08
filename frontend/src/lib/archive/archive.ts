@@ -1,4 +1,5 @@
 import JSZip from "jszip";
+import packageJson from "../../../package.json";
 import { ArchiveError } from "./common";
 
 export { ArchiveError, archiveFileName } from "./common";
@@ -23,7 +24,8 @@ import {
 } from "./schema";
 import { readZipEntries } from "./zipinfo";
 
-export const APP_VERSION = "0.1.0";
+/** project.json の appVersion。package.json の version を使う（二重に書かない） */
+export const APP_VERSION: string = packageJson.version;
 
 /** 不正な zip の対策：展開後の合計サイズとファイル数の上限（仕様 7.5） */
 export const LIMITS = {

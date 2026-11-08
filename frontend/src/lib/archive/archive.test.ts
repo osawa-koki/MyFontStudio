@@ -4,7 +4,9 @@ import type { Project } from "../../types/project";
 import { createEmptyProject } from "../project/project";
 import { addStroke, clearStrokes, createHistory, undo } from "../stroke/history";
 import { JUU, KUCHI, LATIN_A, MARU, dot, makeGlyph } from "../testing/fixtures";
+import packageJson from "../../../package.json";
 import {
+  APP_VERSION,
   ArchiveError,
   archiveFileName,
   buildArchive,
@@ -42,6 +44,12 @@ async function zipOf(files: Record<string, string | Uint8Array>): Promise<ArrayB
   for (const [name, data] of Object.entries(files)) zip.file(name, data, { createFolders: false });
   return toBuffer(await zip.generateAsync({ type: "uint8array" }));
 }
+
+describe("APP_VERSION", () => {
+  it("package.json の version と同じ", () => {
+    expect(APP_VERSION).toBe(packageJson.version);
+  });
+});
 
 describe("archiveFileName", () => {
   it("{familyName}_{YYYYMMDD-HHmm}.zip", () => {

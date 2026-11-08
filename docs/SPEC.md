@@ -54,29 +54,36 @@ Next.js（App Router）+ React + TypeScriptで実装し、静的エクスポー�
 
 ```
 frontend/src/
-  app/                   # Next.js のページ（layout.tsx・page.tsx・editor/page.tsx・preview/page.tsx）
+  app/                   # Next.js のページ（layout.tsx・page.tsx・editor/page.tsx・preview/page.tsx・not-found.tsx）
   views/
     GuidePage.tsx        # 使い方
     EditorPage.tsx       # 入力ページ
     PreviewPage.tsx      # 適用画面
   components/
-    AppShell.tsx         # 共通の外枠（ヘッダー・通知・ダイアログ）
-    Header.tsx           # ナビ＋保存/読込ボタン
-    CharQueue.tsx        # 文字一覧（作成状況付き）
+    AppShell.tsx         # 共通の外枠（ヘッダー・通知・ダイアログ・進み具合）
+    Header.tsx           # ナビ・プロジェクトの切り替え・zip保存・ダウンロード
+    ProjectSwitcher.tsx  # プロジェクトの切り替えメニュー（一覧・新規作成・ZIPの読み込み）
+    ProjectGate.tsx      # ?uuid= のプロジェクトを開いてから表示する。ほかのタブで編集中なら案内
+    GuideActions.tsx     # 使い方ページのボタンとプロジェクトの一覧
+    StorageStatus.tsx    # ブラウザへの保存の状態（永続化・使用量）
+    CharQueue.tsx        # 文字一覧（作成状況・並び替え・絞り込み）
     DrawingCanvas.tsx    # 手書きCanvas
-    GlyphThumb.tsx
+    GlyphThumb.tsx       # 輪郭のサムネイル（見えているものだけ少しずつ計算）
+    TaskProgress.tsx     # 重い処理の進み具合と取り消し
+    useMenuButton.ts     # メニューボタンのキー操作
+  features/              # ストアとlibをつなぐ処理（保存・読み込み・Web Worker・タブのロックなど）
+  workers/               # Web Workerで動かす重い処理（フォントの生成・zipの保存と読み込み）
   lib/
-    stroke/              # ストローク記録・座標変換
-    glyph/               # ストローク→輪郭→中間データ（GlyphOutline）
-    font/                # TTF/OTF生成（ttf.ts / otf.ts）・FontFace登録
-    archive/             # zip保存・読込・バリデーション
-    autosave/            # IndexedDB
-  store/
-    projectStore.ts
+    project/             # プロジェクトの初期値・文字列の取り込み・文字一覧の並び替え
+    stroke/              # ストローク記録・座標変換・描いた履歴
+    glyph/               # ストローク→輪郭→中間データ（GlyphOutline）・サムネイル・PNG
+    font/                # TTF/OTF生成（ttf.ts / otf.ts）・テーブルの書き換え（sfnt.ts・cff.ts）・FontFace登録
+    archive/             # zip保存・読込・バリデーション（common.tsはJSZipに依存しない部分）
+    projects/            # IndexedDBへのプロジェクトの保存（文字ごとのキー）・永続化
+  store/                 # zustandのストア（プロジェクト・入力ページ・通知・進み具合・タブのロックなど）
   types/
     project.ts
 ```
-
 ロジック（`lib/`）はReactに依存させず、純粋な関数としてテスト可能にする。
 
 ## 3. 画面構成とルーティング
@@ -387,10 +394,10 @@ zipにはフォントファイル、グリフごとのベクターJSONとプレ�
 ### 7.4 保存の流れ
 
 1. ヘッダーの「zipで保存」を押す
-2. 未保存のストロークがCanvasにあれば「この文字も保存しますか？」と確認する
-3. フォントを生成し、各グリフのPNGをOffscreenCanvas（非対応環境では通常のCanvas）で描画する
-4. JSZipで組み立て（DEFLATE圧縮）、`<a download>` でダウンロードさせる
-5. 「未保存」バッジを消す
+2. グリフとして保存していない描きかけの線があれば「この文字も保存しますか？」と確認する（保存しない・保存する・キャンセル。描いた履歴は「保存しない」でもzipに入る）
+3. Web Workerで、輪郭を計算してフォント（.ttf・.otf）を生成し、各グリフのPNGをOffscreenCanvasで描画し、JSZipで組み立てる（DEFLATE圧縮）。画面の左下に進み具合と「取り消す」を出す
+4. `<a download>` でダウンロードさせる
+5. 「未保存」バッジを消す（書き出し回数を1加算する）
 
 ### 7.5 読み込みの流れ
 
@@ -542,6 +549,7 @@ Nginxでは、CSP（`default-src 'self'` を基本とし、外部への通信を
 
 | 日付 | 箇所 | 内容 |
 | --- | --- | --- |
+| 2026-11-08 | 2・7.4 | ディレクトリ構成と保存の流れを今の実装に合わせる |
 | 2026-11-08 | 6.1 | hheaのascender / descenderを880 / -120から1000 / -200（usWinと同じ）に変更。macOSとWindowsで行の高さをそろえるため。fsSelection・sxHeight・sCapHeightを追加 |
 | 2026-11-08 | 6.4 | バージョンを `1.{回数}` から小数3桁（`1.003`）に変更（`1.10` が `1.9` より古く見えるため）。familyNameを31文字以内に制限。ライブラリで設定できない項目（日本語名など）は、書き出したあとにテーブルを差し替える方式にした |
 | 2026-11-08 | 8.2 | .notdef表示はCSSでは実現できないため、.notdefと同じ形のSVGで代用する |
