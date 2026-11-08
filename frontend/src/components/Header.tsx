@@ -1,6 +1,7 @@
 import { NavLink } from "react-router";
 import { countGlyphs } from "../lib/project/project";
 import { useProjectStore } from "../store/projectStore";
+import { FontDownloadMenu } from "./FontDownloadMenu";
 import { FontSettingsButton } from "./FontSettingsButton";
 
 const NAV = [
@@ -49,6 +50,10 @@ export function Header() {
               未保存
             </span>
           )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <FontDownloadMenu />
         </div>
       </div>
     </header>

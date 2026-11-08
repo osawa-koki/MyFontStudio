@@ -1,69 +1,310 @@
+import { useEffect, useState } from "react";
+import { Link } from "react-router";
+import { CharQueue } from "../components/CharQueue";
 import { DrawingCanvas } from "../components/DrawingCanvas";
 import { PenSettings } from "../components/PenSettings";
 import { isFullWidthChar } from "../lib/glyph/width";
-import { canRedo, canUndo } from "../lib/stroke/history";
+import {
+  PRESETS,
+  isCreated,
+  isoWithOffset,
+  nextUncreated,
+  parseInputChars,
+  prevChar,
+} from "../lib/project/chars";
+import { toCodepointLabel } from "../lib/project/project";
+import { canRedo, canUndo, isDirty } from "../lib/stroke/history";
 import { useEditorStore, useHistory, usePen } from "../store/editorStore";
 import { useProjectStore } from "../store/projectStore";
+import { askDialog, confirmDialog, notify } from "../store/uiStore";
+import type { GlyphData } from "../types/project";
 
-// 文字一覧と保存は #8 で作る。ここでは Canvas の動作を確かめられるよう、編集中の文字（なければ「あ」）を描く
+/** テキスト入力やダイアログにフォーカスがあるときは、ショートカットを使わない */
+function isTyping(target: EventTarget | null): boolean {
+  if (document.querySelector("dialog[open]")) return true;
+  if (!(target instanceof HTMLElement)) return false;
+  return target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
+}
+
 export function EditorPage() {
-  const char = useProjectStore((s) => s.currentChar ?? s.project.queue[0] ?? "あ");
+  const queue = useProjectStore((s) => s.project.queue);
+  const glyphs = useProjectStore((s) => s.project.glyphs);
   const defaults = useProjectStore((s) => s.project.defaults);
-  const setDefaults = useProjectStore((s) => s.setDefaults);
-  const history = useHistory(char);
-  const pen = usePen(char);
+  const storedCurrent = useProjectStore((s) => s.currentChar);
+  const project = useProjectStore.getState();
   const editor = useEditorStore();
+  const [input, setInput] = useState("");
+
+  // 編集中の文字：選んだ文字、なければ最初の未作成の文字、それもなければ先頭
+  const char =
+    storedCurrent && queue.includes(storedCurrent)
+      ? storedCurrent
+      : (nextUncreated(queue, glyphs, null) ?? queue[0] ?? null);
+  const history = useHistory(char ?? "");
+  const pen = usePen(char ?? "");
+  const dirty = char !== null && isDirty(history, glyphs[char]?.strokes);
+  const allDone = queue.length > 0 && queue.every((c) => isCreated(glyphs, c));
+
+  const addText = (text: string) => {
+    const { accepted, unsupported } = parseInputChars(text);
+    const added = useProjectStore.getState().addChars(accepted);
+    if (unsupported.length > 0) {
+      notify(
+        `対応していない文字（絵文字・結合文字など）は追加しませんでした：${unsupported.join(" ")}`,
+      );
+    }
+    if (added.length > 0 && !char) project.setCurrentChar(added[0]!);
+    return added;
+  };
+
+  /** 編集中の文字を保存する。advance なら次の未作成の文字へ進む */
+  const save = (advance: boolean) => {
+    if (!char || history.strokes.length === 0) return;
+    const prev = glyphs[char];
+    const glyph: GlyphData = {
+      char,
+      codepoint: toCodepointLabel(char),
+      canvasSize: 1000,
+      widthMode: prev?.widthMode ?? "auto",
+      pen: { ...pen, simulatePressure: history.strokes[0]?.simulatePressure ?? false },
+      strokes: history.strokes,
+      updatedAt: isoWithOffset(),
+    };
+    const store = useProjectStore.getState();
+    store.saveGlyph(glyph);
+    editor.discard(char);
+    if (advance) {
+      const next = nextUncreated(
+        store.project.queue,
+        useProjectStore.getState().project.glyphs,
+        char,
+      );
+      if (next) store.setCurrentChar(next);
+    }
+  };
+
+  /** 別の文字へ移る。未保存のストロークがあれば確かめる */
+  const goTo = async (target: string | null) => {
+    if (!target || target === char) return;
+    if (char && dirty) {
+      const { value } = await askDialog({
+        title: `「${char}」は保存されていません`,
+        message: "描いたストロークをどうしますか？",
+        buttons: [
+          { label: "キャンセル", value: "cancel" },
+          { label: "破棄して移動", value: "discard", variant: "danger" },
+          { label: "保存して移動", value: "save", variant: "primary" },
+        ],
+        cancelValue: "cancel",
+      });
+      if (value === "cancel") return;
+      if (value === "save") save(false);
+      else editor.discard(char);
+    }
+    project.setCurrentChar(target);
+  };
+
+  const skip = () => void goTo(nextUncreated(queue, glyphs, char));
+  const prev = () => void goTo(prevChar(queue, char));
+
+  const remove = async (c: string) => {
+    const created = isCreated(glyphs, c);
+    const ok = await confirmDialog(
+      `「${c}」を一覧から削除しますか？`,
+      created ? "作成済みの字形も削除されます。この操作は元に戻せません。" : undefined,
+      "削除",
+      "danger",
+    );
+    if (!ok) return;
+    editor.discard(c);
+    useProjectStore.getState().removeChar(c);
+  };
+
+  // ショートカット：Enter 保存、← 前へ、→ スキップ、Ctrl/Cmd+Z 元に戻す、Ctrl/Cmd+Shift+Z やり直し
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!char || isTyping(e.target) || e.isComposing) return;
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        if (e.shiftKey) editor.redo(char);
+        else editor.undo(char);
+      } else if (mod && e.key.toLowerCase() === "y") {
+        e.preventDefault();
+        editor.redo(char);
+      } else if (mod || e.altKey) {
+        return;
+      } else if (e.key === "Enter") {
+        // ボタンにフォーカスがあるときの Enter はボタンの動作に任せる
+        if (e.target instanceof HTMLButtonElement) return;
+        e.preventDefault();
+        save(true);
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        skip();
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        prev();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 
   return (
-    <section className="flex flex-col items-center gap-4">
-      <p className="text-4xl font-bold">{char}</p>
-      <DrawingCanvas
-        char={char}
-        strokes={history.strokes}
-        pen={pen}
-        usePressure={defaults.usePressure}
-        showModel={defaults.showModel}
-        halfWidth={!isFullWidthChar(char)}
-        ignoreTouch={editor.ignoreTouch}
-        onStroke={(s) => editor.commitStroke(char, s)}
-        onPenDetected={() => editor.setIgnoreTouch(true)}
-      />
-      <div className="flex gap-2">
-        <button
-          type="button"
-          className="btn"
-          disabled={!canUndo(history)}
-          onClick={() => editor.undo(char)}
-        >
-          元に戻す
-        </button>
-        <button
-          type="button"
-          className="btn"
-          disabled={!canRedo(history)}
-          onClick={() => editor.redo(char)}
-        >
-          やり直し
-        </button>
-        <button
-          type="button"
-          className="btn"
-          disabled={history.strokes.length === 0}
-          onClick={() => editor.clear(char)}
-        >
-          クリア
-        </button>
+    // PC（lg 以上）では左に文字列の入力と一覧、右に Canvas を並べる。狭い画面では縦に積む
+    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,560px)] lg:items-start">
+      <div className="flex flex-col gap-4">
+        <section className="flex flex-col gap-3">
+          <form
+            className="flex gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              addText(input);
+              setInput("");
+            }}
+          >
+            <label className="sr-only" htmlFor="chars-input">
+              追加する文字列
+            </label>
+            <input
+              id="chars-input"
+              className="input flex-1"
+              value={input}
+              placeholder="作りたい文字を入力（例：大澤太郎 東京都千代田区）"
+              onChange={(e) => setInput(e.target.value)}
+            />
+            <button type="submit" className="btn btn-primary" disabled={input.trim() === ""}>
+              追加
+            </button>
+          </form>
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="text-slate-500">プリセット：</span>
+            {PRESETS.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className="btn"
+                onClick={() => {
+                  const added = addText(p.chars.join(""));
+                  notify(`${p.label}を ${added.length} 文字追加しました`, "success");
+                }}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          <CharQueue
+            queue={queue}
+            glyphs={glyphs}
+            current={char}
+            onSelect={(c) => void goTo(c)}
+            onDelete={(c) => void remove(c)}
+          />
+        </section>
+
+        {allDone && (
+          <div
+            role="status"
+            className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-green-300 bg-green-50 p-3"
+          >
+            <span className="font-bold text-green-900">すべての文字を作成しました 🎉</span>
+            <Link to="/preview" className="btn btn-primary">
+              プレビューで確かめる
+            </Link>
+          </div>
+        )}
       </div>
-      <PenSettings
-        pen={pen}
-        usePressure={defaults.usePressure}
-        showModel={defaults.showModel}
-        ignoreTouch={editor.ignoreTouch}
-        onPenChange={(p) => editor.setPen(char, p)}
-        onUsePressureChange={(v) => setDefaults({ usePressure: v })}
-        onShowModelChange={(v) => setDefaults({ showModel: v })}
-        onIgnoreTouchChange={(v) => editor.setIgnoreTouch(v)}
-      />
-    </section>
+
+      {char && (
+        <section aria-label="手書き入力" className="flex flex-col items-center gap-3">
+          <div className="flex items-baseline gap-3">
+            <span className="text-5xl font-bold" data-testid="current-char">
+              {char}
+            </span>
+            <span className="font-mono text-sm text-slate-500">{toCodepointLabel(char)}</span>
+            {dirty && (
+              <span className="text-xs font-bold text-amber-700">未保存のストロークがあります</span>
+            )}
+          </div>
+          <DrawingCanvas
+            char={char}
+            strokes={history.strokes}
+            pen={pen}
+            usePressure={defaults.usePressure}
+            showModel={defaults.showModel}
+            halfWidth={!isFullWidthChar(char)}
+            ignoreTouch={editor.ignoreTouch}
+            onStroke={(s) => editor.commitStroke(char, s)}
+            onPenDetected={() => editor.setIgnoreTouch(true)}
+          />
+          <div className="flex flex-wrap justify-center gap-2">
+            <button
+              type="button"
+              className="btn"
+              disabled={!canUndo(history)}
+              onClick={() => editor.undo(char)}
+              title="Ctrl/Cmd+Z"
+            >
+              元に戻す
+            </button>
+            <button
+              type="button"
+              className="btn"
+              disabled={!canRedo(history)}
+              onClick={() => editor.redo(char)}
+              title="Ctrl/Cmd+Shift+Z"
+            >
+              やり直し
+            </button>
+            <button
+              type="button"
+              className="btn"
+              disabled={history.strokes.length === 0}
+              onClick={() => editor.clear(char)}
+            >
+              クリア
+            </button>
+            <button
+              type="button"
+              className="btn"
+              disabled={!prevChar(queue, char)}
+              onClick={prev}
+              title="←"
+            >
+              ← 前へ
+            </button>
+            <button
+              type="button"
+              className="btn"
+              onClick={skip}
+              title="→"
+              disabled={!nextUncreated(queue, glyphs, char)}
+            >
+              スキップ →
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary min-w-24"
+              disabled={history.strokes.length === 0}
+              onClick={() => save(true)}
+              title="Enter"
+            >
+              保存
+            </button>
+          </div>
+          <PenSettings
+            pen={pen}
+            usePressure={defaults.usePressure}
+            showModel={defaults.showModel}
+            ignoreTouch={editor.ignoreTouch}
+            onPenChange={(p) => editor.setPen(char, p)}
+            onUsePressureChange={(v) => project.setDefaults({ usePressure: v })}
+            onShowModelChange={(v) => project.setDefaults({ showModel: v })}
+            onIgnoreTouchChange={(v) => editor.setIgnoreTouch(v)}
+          />
+        </section>
+      )}
+    </div>
   );
 }
