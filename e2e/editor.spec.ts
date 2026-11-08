@@ -143,7 +143,7 @@ test("文字一覧を並び替え・検索・絞り込みできる", async ({ pa
   await page.getByLabel("追加する文字列").press("ControlOrMeta+Enter");
   const region = page.getByRole("region", { name: "文字一覧" });
   const chars = async () =>
-    (await region.getByRole("listitem").allInnerTexts()).map((t) => t.trim().charAt(0));
+    (await region.getByRole("listitem").allTextContents()).map((t) => t.trim().charAt(0));
   expect(await chars()).toEqual(["澤", "あ", "A", "ア", "1", "大"]);
 
   // 「あ」「大」を作成する（大 → あ の順に保存）

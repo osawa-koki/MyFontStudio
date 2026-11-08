@@ -46,7 +46,9 @@ export const IGNORE_TOUCH_KEY = "myfontstudio:ignoreTouch";
 
 function loadIgnoreTouch(): boolean | null {
   try {
-    const v = globalThis.localStorage?.getItem(IGNORE_TOUCH_KEY);
+    // サーバーでの事前の描画（静的エクスポート）では読まない
+    if (typeof window === "undefined") return null;
+    const v = window.localStorage.getItem(IGNORE_TOUCH_KEY);
     return v === "true" ? true : v === "false" ? false : null;
   } catch {
     return null;
@@ -55,7 +57,7 @@ function loadIgnoreTouch(): boolean | null {
 
 function saveIgnoreTouch(value: boolean): void {
   try {
-    globalThis.localStorage?.setItem(IGNORE_TOUCH_KEY, String(value));
+    window.localStorage.setItem(IGNORE_TOUCH_KEY, String(value));
   } catch {
     // プライベートブラウズなどで保存できなくても、この表示の間は効く
   }

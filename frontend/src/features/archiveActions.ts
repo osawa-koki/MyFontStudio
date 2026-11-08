@@ -1,12 +1,11 @@
-import { ArchiveError, archiveFileName, buildArchive, readArchive } from "../lib/archive/archive";
+import { ArchiveError, archiveFileName } from "../lib/archive/archive";
 import { downloadBlob } from "../lib/download";
-import { collectOutlines } from "../lib/font/outlines";
 import { isoWithOffset } from "../lib/project/chars";
 import { openAsNewProject } from "./projects";
 import { useProjectStore } from "../store/projectStore";
 import { askDialog, notify } from "../store/uiStore";
 import { commitDraft } from "./glyphActions";
-import { renderGlyphPng } from "./png";
+import { TaskCancelledError, runInWorker } from "./worker";
 import { unsavedDraftChars } from "./unsavedWarning";
 
 /** 読み込める zip の大きさの上限（圧縮後） */
@@ -34,21 +33,12 @@ export async function saveZip(): Promise<void> {
   const exportCount = store.incrementExportCount();
   const project = useProjectStore.getState().project;
   try {
-    const outlines = collectOutlines(project);
-    let ttf: ArrayBuffer | null = null;
-    let otf: ArrayBuffer | null = null;
-    if (outlines.length > 0) {
-      const { buildFont } = await import("../lib/font/build");
-      const font = { ...project.font, exportCount };
-      ttf = buildFont("ttf", outlines, font);
-      otf = buildFont("otf", outlines, font);
-    }
-    const previews = new Map<string, Uint8Array>();
-    for (const glyph of Object.values(project.glyphs)) {
-      if (glyph.strokes.length > 0) previews.set(glyph.char, await renderGlyphPng(glyph));
-    }
+    // 輪郭・フォント・PNG・圧縮は Web Worker で行い、進み具合を出す
     const now = new Date();
-    const zip = await buildArchive({ project, savedAt: isoWithOffset(now), ttf, otf, previews });
+    const zip = await runInWorker(
+      { kind: "saveZip", project, savedAt: isoWithOffset(now), exportCount, withPreviews: true },
+      { label: "zip に保存しています" },
+    );
     downloadBlob(
       new Blob([zip as BlobPart], { type: "application/zip" }),
       archiveFileName(project.font.familyName, now),
@@ -56,6 +46,10 @@ export async function saveZip(): Promise<void> {
     useProjectStore.getState().markSaved();
     notify("zip に保存しました", "success");
   } catch (e) {
+    if (e instanceof TaskCancelledError) {
+      notify("zip の保存を取り消しました");
+      return;
+    }
     console.error(e);
     notify(`zip に保存できませんでした：${e instanceof Error ? e.message : String(e)}`, "error");
   }
@@ -71,7 +65,12 @@ export async function openZip(file: File): Promise<string | null> {
     return null;
   }
   try {
-    const { project, skipped } = await readArchive(await file.arrayBuffer());
+    const buffer = await file.arrayBuffer();
+    // 展開と検証は Web Worker で行う（バッファは複製せずに渡す）
+    const { project, skipped } = await runInWorker(
+      { kind: "readZip", buffer },
+      { label: "zip を読み込んでいます", transfer: [buffer] },
+    );
     const id = await openAsNewProject(project);
     if (skipped.length > 0) {
       notify(
@@ -84,6 +83,10 @@ export async function openZip(file: File): Promise<string | null> {
     }
     return id;
   } catch (e) {
+    if (e instanceof TaskCancelledError) {
+      notify("zip の読み込みを取り消しました");
+      return null;
+    }
     const message = e instanceof ArchiveError ? e.message : "zip ファイルを読み込めませんでした";
     if (!(e instanceof ArchiveError)) console.error(e);
     notify(`「${file.name}」を開けませんでした：${message}`, "error");

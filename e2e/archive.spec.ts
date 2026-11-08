@@ -124,3 +124,83 @@ test.describe("壊れた zip・無関係な zip を開いても落ちない", ()
     ).toBeVisible();
   });
 });
+
+test("重い処理は Web Worker で行い、進み具合を出して取り消せる", async ({ page }) => {
+  // 300 文字のプロジェクトの zip を作る
+  const zip = new JSZip();
+  const chars = Array.from({ length: 300 }, (_, i) => String.fromCodePoint(0x4e00 + i));
+  const codepoint = (c: string) =>
+    "U+" + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0");
+  const pen = { size: 40, thinning: 0.5, smoothing: 0.5, streamline: 0.5 };
+  zip.file(
+    "project.json",
+    JSON.stringify({
+      format: "handwriting-font-project",
+      formatVersion: 2,
+      appVersion: "0.1.0",
+      savedAt: "",
+      font: {
+        familyName: "Many",
+        familyNameJa: "",
+        designer: "",
+        exportCount: 0,
+      },
+      defaults: { pen, usePressure: true, showModel: true },
+      queue: chars,
+      previewText: "",
+      glyphs: chars.map((c) => ({
+        char: c,
+        codepoint: codepoint(c),
+        file: `rawdata/vector/${codepoint(c)}.json`,
+      })),
+      histories: [],
+    }),
+  );
+  for (const c of chars) {
+    const strokes = Array.from({ length: 6 }, (_, k) => ({
+      points: Array.from({ length: 40 }, (_, j) => [
+        100 + j * 18,
+        120 + k * 120 + 10 * Math.sin(j / 3),
+        0.5,
+      ]),
+    }));
+    zip.file(
+      `rawdata/vector/${codepoint(c)}.json`,
+      JSON.stringify({
+        char: c,
+        codepoint: codepoint(c),
+        canvasSize: 1000,
+        widthMode: "auto",
+        pen: { ...pen, simulatePressure: false },
+        strokes,
+        updatedAt: "",
+      }),
+    );
+  }
+  const buffer = Buffer.from(await zip.generateAsync({ type: "uint8array" }));
+
+  const workerLoaded = page.waitForRequest(/\/workers\/font\.worker\.js$/);
+  await page.goto("/");
+  await page
+    .getByTestId("zip-input")
+    .setInputFiles({ name: "many.zip", mimeType: "application/zip", buffer });
+  await workerLoaded;
+  await expect(page).toHaveURL(/\/editor\/\?uuid=/);
+  await expect(page.getByLabel("登録済み文字数")).toHaveText("300 文字");
+
+  // zip で保存すると進み具合が出る。取り消すと保存しない
+  await page.getByRole("button", { name: "zip で保存" }).click();
+  const progress = page.getByTestId("task-progress");
+  await expect(progress).toContainText(
+    /輪郭を計算しています|フォントを作っています|プレビュー画像を作っています/,
+  );
+  await progress.getByRole("button", { name: "取り消す" }).click();
+  await expect(progress).toBeHidden();
+  await expect(
+    page.getByRole("status").filter({ hasText: "zip の保存を取り消しました" }),
+  ).toBeVisible();
+  // 取り消したあとも、Worker を作り直してフォントを作れる
+  const downloading = page.waitForEvent("download");
+  await page.getByRole("button", { name: "フォントをダウンロード（.ttf）" }).click();
+  expect((await downloading).suggestedFilename()).toBe("Many.ttf");
+});

@@ -1,11 +1,11 @@
-import { ASCENDER, EM } from "../lib/glyph/constants";
-import { getGlyphOutline } from "../lib/glyph/outline";
-import { contoursToSvgPath } from "../lib/glyph/path";
-import type { GlyphData } from "../types/project";
+import { ASCENDER, EM } from "./constants";
+import { getGlyphOutline } from "./outline";
+import { contoursToSvgPath } from "./path";
+import type { GlyphData } from "../../types/project";
 
 export const PREVIEW_PNG_SIZE = 256;
 
-/** グリフのプレビュー PNG（256×256、白背景に黒）を作る。OffscreenCanvas がなければ通常の Canvas を使う */
+/** グリフのプレビュー PNG（256×256、白背景に黒）を作る。OffscreenCanvas（Web Worker でも使える）がなければ通常の Canvas を使う */
 export async function renderGlyphPng(glyph: GlyphData): Promise<Uint8Array> {
   const size = PREVIEW_PNG_SIZE;
   const offscreen = typeof OffscreenCanvas !== "undefined" ? new OffscreenCanvas(size, size) : null;

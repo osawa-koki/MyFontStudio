@@ -12,6 +12,8 @@ coverage/
 .next/
 /frontend/out/
 /frontend/next-env.d.ts
+# Web Worker のバンドル（npm run build:worker が作る）
+/frontend/public/workers/
 
 ### デモの元の録画（README には docs/demo.gif を載せる） ###
 *.mov
