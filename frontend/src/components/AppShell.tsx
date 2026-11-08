@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { useAutosave } from "../features/autosave";
 import { useFontPreview } from "../features/fontPreview";
 import { useZipDrop } from "../features/zipDrop";
 import { DialogHost } from "./DialogHost";
@@ -10,6 +11,7 @@ import { Toasts } from "./Toasts";
 /** すべてのページの共通の外枠（ヘッダー・通知・ダイアログ）。プレビュー用のフォントの生成と zip のドロップもここで扱う */
 export function AppShell({ children }: { children: ReactNode }) {
   useFontPreview();
+  useAutosave();
   useZipDrop();
   return (
     <div className="flex min-h-screen flex-col">

@@ -134,6 +134,7 @@ export function EditorPage() {
     // PC（lg 以上）では左に文字列の入力と一覧、右に Canvas を並べる。狭い画面では縦に積む
     <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,560px)] lg:items-start">
       <div className="flex flex-col gap-4">
+        <h1 className="sr-only">入力</h1>
         <section className="flex flex-col gap-3">
           <form
             className="flex gap-2"

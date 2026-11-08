@@ -64,8 +64,13 @@ test("zip で保存 → リロード → zip を開くで、一覧・ストロ�
   );
   expect(vector.strokes).toHaveLength(2);
 
-  // リロードすると消える（自動保存は #11）ので、zip から復元する
+  // リロードして、自動保存からは復元せず、zip から復元する
   await page.goto("/");
+  await page
+    .getByRole("dialog", { name: "前回の作業を復元しますか？" })
+    .getByRole("button", { name: "復元しない" })
+    .click();
+  await expect(page.getByLabel("登録済み文字数")).toHaveText("0 文字");
   await page.getByTestId("zip-input").setInputFiles(zipPath);
   await expect(page).toHaveURL(/\/editor\/?$/);
   await expect(
