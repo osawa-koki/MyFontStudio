@@ -92,7 +92,7 @@ docker rm -f app
 - actions は、すべてコミットの SHA で固定し、行の終わりにバージョンを書く（例：`uses: actions/checkout@<40 文字の SHA> # v7.0.1`）。SHA は `gh api repos/<owner>/<repo>/commits/<タグ> --jq .sha` で調べる。
 - ワークフローを変えたら actionlint で確認する（`docker run --rm -v "$PWD:/repo:ro" -w /repo rhysd/actionlint:1.7.7 -no-color`）。
 - すべてのジョブに `timeout-minutes` を付ける。
-- Dependabot（`.github/dependabot.yml`）は github-actions・npm（`frontend/`・`e2e/`）・pip（`frontend/scripts/requirements-fonts.txt`）・docker（`Dockerfile` の Nginx。ダイジェストで固定している）を週 1 回更新する。minor・patch はエコシステムごとに 1 つの PR にまとめる。Node.js（`frontend/.node-version` と `Dockerfile` の `node`）は対象外なので、上げるときは手で 2 つをそろえる。
+- Dependabot（`.github/dependabot.yml`）は github-actions・npm（`frontend/`・`e2e/`）・pip（`frontend/scripts/requirements-fonts.txt`）・docker（`Dockerfile` の Nginx。ダイジェストで固定している）を週 1 回更新する。minor・patch はエコシステムごとに 1 つの PR にまとめる。Node.js（`frontend/.node-version` と `Dockerfile` の `node`）は対象外なので、上げるときは手で 2 つをそろえる。Nginx（`nginxinc/nginx-unprivileged`）は開発版（mainline。奇数のマイナー：1.31 系）を使い、Dependabot のマイナーの更新もそのまま受ける（#17 で 1.30 → 1.31 に上げた）。Alpine のパッケージは `Dockerfile` の `apk upgrade` と週 1 回の作り直しで更新する。
 
 ### デプロイ
 
