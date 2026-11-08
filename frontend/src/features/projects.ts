@@ -16,6 +16,7 @@ import {
   type KeyValueStore,
   type ProjectSummary,
 } from "../lib/projects/repository";
+import { requestPersistence } from "../lib/projects/storage";
 import { useEditorStore } from "../store/editorStore";
 import { useProjectStore } from "../store/projectStore";
 import type { Project } from "../types/project";
@@ -46,10 +47,21 @@ export function hasPendingSave(): boolean {
   return pendingWrites > 0 || saveLater.pending();
 }
 
+/** ブラウザに永続化を頼んだか（1 回の表示で 1 回だけ頼む） */
+let persistRequested = false;
+
+/** 空き容量が足りなくなってもブラウザが自動で消さないよう、永続化を頼む（初めて保存するとき） */
+function askPersistenceOnce(): void {
+  if (persistRequested || typeof navigator === "undefined") return;
+  persistRequested = true;
+  void requestPersistence(navigator.storage);
+}
+
 function save(id: string, project: Project, dirty: boolean): Promise<void> {
   // 文字が 1 つもない新しいプロジェクトは、一覧を散らかさないよう保存しない
   if (!stored.has(id) && !hasContent(project)) return writes;
   stored.add(id);
+  askPersistenceOnce();
   return enqueue(() => saveProject(idb, id, project, dirty));
 }
 
