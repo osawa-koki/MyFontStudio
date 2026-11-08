@@ -1,0 +1,45 @@
+# 起動時に envsubst で ${PORT} を置き換える（nginx の変数は $uri のように波かっこなしで書く）
+server {
+    listen ${PORT};
+    listen [::]:${PORT};
+    server_name _;
+    root /usr/share/nginx/html;
+
+    server_tokens off;
+    charset utf-8;
+
+    gzip on;
+    gzip_types text/css application/javascript application/json image/svg+xml;
+    gzip_min_length 1024;
+
+    # 外部への通信を一切させない（手書きのデータをブラウザの外に出さない）。
+    # FontFace・Canvas・ダウンロードで blob: / data: を使う
+    set $csp "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data: blob:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+
+    add_header Content-Security-Policy $csp always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+    add_header Cross-Origin-Opener-Policy "same-origin" always;
+    # location の add_header（Cache-Control）を足しても、上のヘッダーを引き継ぐ
+    add_header_inherit merge;
+
+    location = /healthz {
+        access_log off;
+        default_type text/plain;
+        return 200 "ok";
+    }
+
+    # ファイル名にハッシュの付いたビルド成果物は長くキャッシュする
+    location /assets/ {
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        try_files $uri =404;
+    }
+
+    # SPA：ファイルがなければ index.html を返す（/editor などを直接開けるように）。index.html は毎回確かめる
+    location / {
+        add_header Cache-Control "no-cache" always;
+        try_files $uri /index.html;
+    }
+}
