@@ -21,7 +21,7 @@ test("Canvas にマウスで描き、元に戻す・やり直し・クリアが�
 }) => {
   await page.goto("/editor");
   await page.getByLabel("追加する文字列").fill("あ");
-  await page.getByLabel("追加する文字列").press("Enter");
+  await page.getByLabel("追加する文字列").press("ControlOrMeta+Enter");
   const canvas = page.getByTestId("drawing-canvas");
   await expect(canvas).toHaveAttribute("aria-label", /ストローク 0 本/);
   await drawStroke(page, [

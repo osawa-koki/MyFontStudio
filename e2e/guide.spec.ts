@@ -27,7 +27,7 @@ test("zip に保存していない変更があると、タブを閉じる・再�
   expect(beforeUnloadCount.value).toBe(0);
 
   await page.getByLabel("追加する文字列").fill("あ");
-  await page.getByLabel("追加する文字列").press("Enter");
+  await page.getByLabel("追加する文字列").press("ControlOrMeta+Enter");
   await drawStroke(page, [
     [200, 500],
     [800, 500],

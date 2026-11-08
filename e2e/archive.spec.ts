@@ -8,7 +8,7 @@ test("zip で保存 → リロード → zip を開くで、一覧・ストロ�
 }) => {
   await page.goto("/editor");
   await page.getByLabel("追加する文字列").fill("口十未");
-  await page.getByLabel("追加する文字列").press("Enter");
+  await page.getByLabel("追加する文字列").press("ControlOrMeta+Enter");
   await drawStroke(page, [
     [250, 250],
     [750, 250],

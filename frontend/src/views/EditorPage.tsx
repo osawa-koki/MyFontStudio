@@ -137,26 +137,39 @@ export function EditorPage() {
         <h1 className="sr-only">入力</h1>
         <section className="flex flex-col gap-3">
           <form
-            className="flex gap-2"
+            className="flex flex-col gap-2"
             onSubmit={(e) => {
               e.preventDefault();
               addText(input);
               setInput("");
             }}
           >
-            <label className="sr-only" htmlFor="chars-input">
+            <label className="text-sm text-slate-600" htmlFor="chars-input">
               追加する文字列
+              <span className="ml-2 text-xs text-slate-400">
+                複数行でも入力できます（改行・空白は除きます）。Ctrl/⌘+Enter でも追加
+              </span>
             </label>
-            <input
+            <textarea
               id="chars-input"
-              className="input flex-1"
+              className="input min-h-20 resize-y"
+              rows={3}
               value={input}
-              placeholder="作りたい文字を入力（例：大澤太郎 東京都千代田区）"
+              placeholder={"作りたい文字を入力\n例：大澤太郎\n　　東京都千代田区"}
               onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                // Enter は改行。Ctrl/Cmd+Enter で追加する（変換中の Enter は除く）
+                if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !e.nativeEvent.isComposing) {
+                  e.preventDefault();
+                  e.currentTarget.form?.requestSubmit();
+                }
+              }}
             />
-            <button type="submit" className="btn btn-primary" disabled={input.trim() === ""}>
-              追加
-            </button>
+            <div className="flex justify-end">
+              <button type="submit" className="btn btn-primary" disabled={input.trim() === ""}>
+                追加
+              </button>
+            </div>
           </form>
           <div className="flex flex-wrap items-center gap-2 text-sm">
             <span className="text-slate-500">プリセット：</span>
