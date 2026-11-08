@@ -169,7 +169,11 @@ export function DrawingCanvas(props: Props) {
     if (e.pointerType === "mouse" && e.button !== 0) return;
     if (active.current) return; // 2 本目の指などは無視する
     e.preventDefault();
-    e.currentTarget.setPointerCapture(e.pointerId);
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // キャプチャできなくても描ける（Canvas の外に出ると線が途切れるだけ）
+    }
     const { simulate } = resolvePressure(e.pointerType, e.pressure, latest.current.usePressure);
     active.current = { pointerId: e.pointerId, points: [], simulate };
     addPoints(e);

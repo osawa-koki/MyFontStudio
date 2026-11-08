@@ -18,8 +18,10 @@ import { useProjectStore } from "./projectStore";
 interface EditorState {
   /** 文字ごとのペンのパラメータ（作成済みの文字は保存したときの値から始める） */
   pens: Record<string, PenParams>;
-  /** ペンを検出したら、指（touch）の入力を無視する（パームリジェクション） */
+  /** 指（touch）の入力を無視する（パームリジェクション） */
   ignoreTouch: boolean;
+  /** 利用者が「指の入力を無視」を自分で切り替えたか（切り替えたら、ペンを検出しても変えない） */
+  ignoreTouchChosen: boolean;
 
   commitStroke(char: string, stroke: Stroke): void;
   undo(char: string): void;
@@ -30,7 +32,33 @@ interface EditorState {
   discard(char: string): void;
   /** 文字ごとのペンを忘れる（プロジェクトを切り替えたときなど） */
   reset(): void;
+  /** 利用者が「指の入力を無視」を切り替えた（ブラウザに覚えておく） */
   setIgnoreTouch(value: boolean): void;
+  /**
+   * ペンを検出したとき。利用者が自分で切り替えていなければ、指の入力を無視する。
+   * 自動で ON にしたら true（呼び出し側で知らせる）
+   */
+  penDetected(): boolean;
+}
+
+/** 「指の入力を無視」の設定を覚えておくキー（ブラウザごとの好み。プロジェクトには入れない） */
+export const IGNORE_TOUCH_KEY = "myfontstudio:ignoreTouch";
+
+function loadIgnoreTouch(): boolean | null {
+  try {
+    const v = globalThis.localStorage?.getItem(IGNORE_TOUCH_KEY);
+    return v === "true" ? true : v === "false" ? false : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveIgnoreTouch(value: boolean): void {
+  try {
+    globalThis.localStorage?.setItem(IGNORE_TOUCH_KEY, String(value));
+  } catch {
+    // プライベートブラウズなどで保存できなくても、この表示の間は効く
+  }
 }
 
 /** 文字の描いた履歴。なければ保存済みの線から作る */
@@ -54,9 +82,12 @@ export function penFor(state: EditorState, char: string): PenParams {
 const updateDrawing = (char: string, f: (h: DrawingHistory) => DrawingHistory) =>
   useProjectStore.getState().updateDrawing(char, f);
 
+const savedIgnoreTouch = loadIgnoreTouch();
+
 export const useEditorStore = create<EditorState>()((set, get) => ({
   pens: {},
-  ignoreTouch: false,
+  ignoreTouch: savedIgnoreTouch ?? false,
+  ignoreTouchChosen: savedIgnoreTouch !== null,
   commitStroke: (char, stroke) => updateDrawing(char, (h) => addStroke(h, stroke)),
   undo: (char) => updateDrawing(char, undo),
   redo: (char) => updateDrawing(char, redo),
@@ -77,7 +108,16 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
     });
   },
   reset: () => set({ pens: {} }),
-  setIgnoreTouch: (value) => set({ ignoreTouch: value }),
+  setIgnoreTouch(value) {
+    saveIgnoreTouch(value);
+    set({ ignoreTouch: value, ignoreTouchChosen: true });
+  },
+  penDetected() {
+    const { ignoreTouch, ignoreTouchChosen } = get();
+    if (ignoreTouch || ignoreTouchChosen) return false;
+    set({ ignoreTouch: true });
+    return true;
+  },
 }));
 
 const NO_STROKES: Stroke[] = [];
