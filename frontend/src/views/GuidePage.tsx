@@ -1,4 +1,4 @@
-import { Link } from "react-router";
+import Link from "next/link";
 
 export function GuidePage() {
   return (
@@ -9,7 +9,7 @@ export function GuidePage() {
         .otf）を作れます。
       </p>
       <div>
-        <Link to="/editor" className="btn btn-primary">
+        <Link href="/editor" className="btn btn-primary">
           はじめる
         </Link>
       </div>

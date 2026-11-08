@@ -2,7 +2,8 @@
 
 自分の手書き文字から、PC にインストールして Word などで使えるフォント（.ttf / .otf）を作る Web アプリ。すべての処理をブラウザの中で行い、サーバー・アカウント・外部への送信はない（静的サイト）。仕様は [docs/SPEC.md](docs/SPEC.md)、使い方と構成は [README.md](README.md) を参照。
 
-- `frontend/`：Vite + React + TypeScript（strict）+ Tailwind CSS の画面（SPA）。コードはすべてここにある
+- `frontend/`：Next.js（App Router、静的エクスポート `output: 'export'`）+ React + TypeScript（strict）+ Tailwind CSS の画面。コードはすべてここにある。サーバーは持たない（Server Actions・API ルートなどサーバーが要る機能は使わない）
+  - `src/app/`：Next.js のページ（`layout.tsx`・`page.tsx`・`editor/page.tsx`・`preview/page.tsx`・`not-found.tsx`・`icon.svg`）。中身は `src/views/` を呼ぶだけ
   - `src/lib/`：ロジック（純粋な関数。React に依存させない。テストはここに書く）
     - `project/`：プロジェクトの初期値・名前の直し方・コードポイントの表記（`project.ts`）、文字列の取り込み・プリセット・次の未作成の文字（`chars.ts`）、適用画面の文章の分け方（`preview.ts`）
     - `stroke/`：ストロークの記録（丸め・間引き・em 座標への変換・筆圧の決め方）、元に戻す/やり直しの履歴（`history.ts`）、Canvas のガイド線（`guides.ts`）
@@ -10,13 +11,13 @@
     - `font/`：フォントの生成（仕様 6 章）。`build.ts` が入口（`GlyphOutline[]` とフォントの設定 → ArrayBuffer。fonteditor-core・opentype.js が大きいので、画面からは動的 import で読み、別のチャンクにする）、`outlines.ts` がプロジェクトから輪郭を集める処理、`ttf.ts`（fonteditor-core）・`otf.ts`（opentype.js）がアダプタ、`sfnt.ts` が書き出したあとのテーブルの差し替え（name・OS/2）と書き換え（head・hhea・maxp・post）、`glyphs.ts` が .notdef・スペースを含むグリフの一覧、`spec.ts` が名前とバージョン、`metrics.ts` がメトリクスの値、`fontface.ts` がプレビュー用の FontFace の登録
     - `archive/`：zip の保存・読み込み（仕様 7 章）。`schema.ts` が zod のスキーマ・`formatVersion`・マイグレーション、`zipinfo.ts` が展開前の中央ディレクトリの読み取り（ファイル数・展開後のサイズの上限）、`archive.ts` が組み立てと読み込み（想定外のパスは読まない、壊れたベクター JSON はその文字だけ飛ばす）
     - `testing/fixtures.ts`：テスト用の固定のストローク（「口」「十」「。」「A」）
-  - `src/app/`：ストアと lib をつなぐ処理（`fontPreview.ts`：グリフが変わったら 300ms 待ってプレビュー用の .ttf を作り直す、`actions.ts`：フォントのダウンロード、`glyphActions.ts`：描きかけの保存、`archiveActions.ts`・`zipDrop.ts`・`png.ts`：zip の保存・読み込み・ドラッグ＆ドロップ・プレビュー PNG）
+  - `src/features/`：ストアと lib をつなぐ処理（`fontPreview.ts`：グリフが変わったら 300ms 待ってプレビュー用の .ttf を作り直す、`actions.ts`：フォントのダウンロード、`glyphActions.ts`：描きかけの保存、`archiveActions.ts`・`zipDrop.ts`・`png.ts`：zip の保存・読み込み・ドラッグ＆ドロップ・プレビュー PNG）
   - `src/store/`：zustand のストア（`projectStore`：プロジェクトの状態、`fontStore`：プレビュー用のフォント（FontFace の名前・作成済みの文字）、`previewStore`：適用画面の表示設定、`editorStore`：入力ページの描きかけ（文字ごとの履歴とペン。保存するまでプロジェクトに入れない）、`uiStore`：通知・確認ダイアログ）
     - zustand 5 では、セレクターが毎回新しいオブジェクトを返すと無限に再描画される。組み立てが要る値は、値を選んでから `useMemo` で作る（`editorStore` の `useHistory`・`usePen`）
   - `src/types/project.ts`：プロジェクト・グリフの型（zip の JSON と同じ形）
-  - `src/pages/`・`src/components/`：画面。`DrawingCanvas` は 2 枚の Canvas（下：ガイド・お手本・確定したストローク、上：描いている途中）で、各ストロークの輪郭を nonzero で塗る
-  - `src/router.tsx`：ルーティング。`VITE_ROUTER=hash` なら HashRouter（GitHub Pages）、それ以外は BrowserRouter
-- `Dockerfile`・`nginx/default.conf.template`・`render.yaml`：Node.js でビルド → 非 root の Nginx で配信（SPA のフォールバック・セキュリティヘッダー・CSP・`/healthz`）。Render 用
+  - `src/views/`・`src/components/`：画面（`src/pages/` は Next.js の Pages Router と衝突するので使わない）。入力・プレビューと、ストアを使う部品はクライアントコンポーネント（`"use client"`）。共通の外枠は `AppShell`。`DrawingCanvas` は 2 枚の Canvas（下：ガイド・お手本・確定したストローク、上：描いている途中）で、各ストロークの輪郭を nonzero で塗る
+- `Dockerfile`・`nginx/default.conf.template`・`render.yaml`：Node.js で静的エクスポート → 非 root の Nginx で配信（`/editor` と `/editor/` → `editor/index.html`、ないページは `404.html`、セキュリティヘッダー・CSP・`/healthz`）。Render 用
+  - CSP の `script-src` は、Next.js が HTML に埋め込むインラインのスクリプトの SHA-256（ビルド時に `frontend/scripts/csp-hashes.mjs` が集めて `/etc/nginx/csp.conf` に書く）。`'unsafe-inline'` にしない
 - `e2e/`：動いているサーバー（コンテナ）に対する Playwright のテスト。応答とヘッダー（`server.spec.ts`）、ブラウザでの操作（`ui.spec.ts`・`editor.spec.ts`・`preview.spec.ts`・`archive.spec.ts`。Canvas にはマウスで描く：`drawing.ts`）。`fixtures.ts` の `test` を使うと、コンソールのエラー（CSP の違反など）があれば失敗する
 - `docs/SPEC.md`：仕様書。仕様を変えたら、本文と「12. 仕様の修正履歴」を直す
 - Node.js のバージョンは `frontend/.node-version` で固定している
@@ -56,15 +57,15 @@ PR は役割ごとに分ける。前の PR に依存する場合は、マージ�
 # 画面（frontend/ で）
 npm run typecheck
 npm run lint            # ESLint と Prettier（直すときは npm run format）
-npm run test:coverage   # 単体テストとカバレッジの下限（vite.config.ts の coverage.thresholds）
-npm run build
+npm run test:coverage   # 単体テストとカバレッジの下限（vitest.config.ts の coverage.thresholds）
+npm run build           # 静的エクスポート（out/）。BASE_PATH=/MyFontStudio で GitHub Pages 用
 npm run dev             # 開発サーバー
 
 # 生成したフォントの確認（frontend/ で。fontTools と OTS が要る）
 python3 -m venv /tmp/fontcheck && /tmp/fontcheck/bin/pip install -r scripts/requirements-fonts.txt
-npm run fonts:sample    # 固定のストロークから out/Sample.ttf・out/Sample.otf を作る
-/tmp/fontcheck/bin/python scripts/check-fonts.py out/Sample.ttf out/Sample.otf
-/tmp/fontcheck/bin/ttx -t name -t OS/2 -o - out/Sample.ttf   # テーブルの中身を見る
+npm run fonts:sample    # 固定のストロークから sample-fonts/Sample.ttf・.otf を作る（out/ は Next.js の書き出し先）
+/tmp/fontcheck/bin/python scripts/check-fonts.py sample-fonts/Sample.ttf sample-fonts/Sample.otf
+/tmp/fontcheck/bin/ttx -t name -t OS/2 -o - sample-fonts/Sample.ttf   # テーブルの中身を見る
 
 # Docker と E2E（リポジトリのルートで）
 docker build -t myfontstudio .
@@ -75,14 +76,14 @@ BASE_URL=http://localhost:8080 npm test
 docker rm -f app
 ```
 
-- フォントの生成（`lib/font`・`lib/glyph`）を変えたら、上の fontTools・OTS の確認を実行する（CI でも実行する）。opentype.js は Vite では ESM、Node（tsx・Vitest）では UMD として読まれるので、`otf.ts` のように両方に対応させる。
-- 画面の変更は、`e2e/ui.spec.ts` で操作を確かめる。CSP（`script-src 'self'`・`style-src 'self'`）に違反しないよう、インラインのスクリプト・`<style>`・HTML の `style` 属性を使わない（React の `style` プロパティは CSSOM で設定されるので使ってよい）。
+- フォントの生成（`lib/font`・`lib/glyph`）を変えたら、上の fontTools・OTS の確認を実行する（CI でも実行する）。opentype.js はバンドラー（Next.js）では ESM、Node（tsx・Vitest）では UMD として読まれるので、`otf.ts` のように両方に対応させる。
+- 画面の変更は、`e2e/` で操作を確かめる。E2E は Docker の Nginx（CSP あり）に対して実行する（CI と同じ）。CSP（`style-src 'self'`）に違反しないよう、`<style>`・`next/font`・自分で書くインラインのスクリプトを使わない（React の `style` プロパティは CSSOM で設定されるので使ってよい）。Next.js のルートアナウンサーも `role="alert"` なので、通知は文言で絞って探す。
 
 ## CI（GitHub Actions）
 
 | ワークフロー | トリガー | 内容 |
 |---|---|---|
-| `frontend-ci.yml` | すべての PR | 型チェック、ESLint・Prettier、単体テストとカバレッジ（`lib/`・`store/` の行の 85% が下限）、生成したフォントの確認（fontTools・OTS）、ビルド（BrowserRouter と HashRouter の 2 通り） |
+| `frontend-ci.yml` | すべての PR | 型チェック（`next typegen` のあと `tsc`）、ESLint・Prettier、単体テストとカバレッジ（`lib/`・`store/` の行の 85% が下限）、生成したフォントの確認（fontTools・OTS）、ビルド（ルートと `basePath` の 2 通り） |
 | `docker-ci.yml` | すべての PR | E2E テストの型チェック。イメージをビルドしてコンテナを起動し、Playwright のテストを実行する（失敗したらレポートをアーティファクトに残す） |
 | `audit.yml` | `frontend/package*.json` を変えた PR、週 1 回（月曜 3:30 JST）、手動 | `npm audit --omit=dev --audit-level=high`（画面に入る依存。開発用を含む結果はサマリーに出すだけ） |
 
@@ -96,7 +97,7 @@ docker rm -f app
 | 先 | トリガー | 内容 |
 |---|---|---|
 | Render | `main` への push のうち、`frontend/`・`nginx/`・`Dockerfile`・`.dockerignore` が変わったとき（Render 側の自動デプロイ、`render.yaml` の `buildFilter`） | `render.yaml` の設定で Docker イメージをビルドして動かす |
-| GitHub Pages（https://osawa-koki.github.io/MyFontStudio/ ） | `main` への push のうち、`frontend/`・`pages.yml` が変わったとき、手動（`pages.yml`） | `VITE_ROUTER=hash`・`BASE_PATH=/MyFontStudio/` でビルドしてデプロイする |
+| GitHub Pages（https://osawa-koki.github.io/MyFontStudio/ ） | `main` への push のうち、`frontend/`・`pages.yml` が変わったとき、手動（`pages.yml`） | `BASE_PATH=/MyFontStudio`（Next.js の `basePath`）でビルドし、`frontend/out` をデプロイする |
 
 - GitHub Pages では HTTP ヘッダー（CSP など）を付けられない。セキュリティヘッダーは Nginx（Render）でだけ付く。
 - 画面を変えた PR のマージ後は、`pages.yml` の結果を確認する（`gh run list --workflow pages.yml --branch main --limit 1` → `gh run watch <run-id> --exit-status`）。

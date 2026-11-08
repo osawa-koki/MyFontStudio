@@ -67,7 +67,7 @@ test("zip で保存 → リロード → zip を開くで、一覧・ストロ�
   // リロードすると消える（自動保存は #11）ので、zip から復元する
   await page.goto("/");
   await page.getByTestId("zip-input").setInputFiles(zipPath);
-  await expect(page).toHaveURL(/\/editor$/);
+  await expect(page).toHaveURL(/\/editor\/?$/);
   await expect(
     page.getByRole("region", { name: "文字一覧" }).getByRole("listitem"),
   ).toHaveCount(3);
@@ -103,9 +103,8 @@ test.describe("壊れた zip・無関係な zip を開いても落ちない", ()
         mimeType: "application/zip",
         buffer: Buffer.from("not a zip"),
       });
-    await expect(page.getByRole("alert")).toContainText(
-      "「broken.zip」を開けませんでした：zip ファイルではありません",
-    );
+    // Next.js のルートアナウンサーも role="alert" なので、文言で絞る
+    await expect(page.getByRole("alert").filter({ hasText: "「broken.zip」を開けませんでした：zip ファイルではありません" })).toBeVisible();
     await expect(page).toHaveURL(/\/$/);
   });
   test("project.json のない zip", async ({ page }) => {
@@ -120,8 +119,7 @@ test.describe("壊れた zip・無関係な zip を開いても落ちない", ()
         mimeType: "application/zip",
         buffer,
       });
-    await expect(page.getByRole("alert")).toContainText(
-      "このアプリで保存した zip ではありません",
-    );
+    // Next.js のルートアナウンサーも role="alert" なので、文言で絞る
+    await expect(page.getByRole("alert").filter({ hasText: "このアプリで保存した zip ではありません" })).toBeVisible();
   });
 });

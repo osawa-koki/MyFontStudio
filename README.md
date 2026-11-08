@@ -28,7 +28,8 @@ npm ci
 npm run dev
 ```
 
+Next.js（App Router）の静的エクスポートで、`npm run build` すると `out/` にページごとの HTML などができる（サーバーは要らない）。
+
 | ビルドの環境変数 | 内容 |
 |---|---|
-| `VITE_ROUTER` | `hash` なら HashRouter（`#/editor`。GitHub Pages 用）。それ以外は BrowserRouter |
-| `BASE_PATH` | 配信するパス（既定 `/`。GitHub Pages では `/MyFontStudio/`） |
+| `BASE_PATH` | 配信するパス（Next.js の `basePath`。既定はルート。GitHub Pages では `/MyFontStudio`） |

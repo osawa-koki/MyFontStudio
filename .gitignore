@@ -8,8 +8,13 @@ dist/
 *.tsbuildinfo
 coverage/
 
-### フォントの検証の出力 ###
+### Next.js ###
+.next/
 /frontend/out/
+/frontend/next-env.d.ts
+
+### フォントの検証の出力 ###
+/frontend/sample-fonts/
 
 ### VisualStudioCode ###
 .vscode/*

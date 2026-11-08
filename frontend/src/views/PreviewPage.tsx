@@ -1,6 +1,9 @@
+"use client";
+
 import { useEffect, useMemo, type CSSProperties } from "react";
-import { Link, useNavigate } from "react-router";
-import { downloadFont } from "../app/actions";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { downloadFont } from "../features/actions";
 import { NotdefBox } from "../components/NotdefBox";
 import { parseInputChars } from "../lib/project/chars";
 import { missingChars, splitPreviewText } from "../lib/project/preview";
@@ -29,7 +32,7 @@ export function PreviewPage() {
   const setPreviewText = useProjectStore((s) => s.setPreviewText);
   const { family, chars, outlineCount } = useFontStore();
   const settings = usePreviewStore();
-  const navigate = useNavigate();
+  const router = useRouter();
 
   // 文章が空なら、作成済みの文字を連結したものから始める
   useEffect(() => {
@@ -46,7 +49,7 @@ export function PreviewPage() {
       <section className="flex flex-col items-center gap-4 py-16 text-center">
         <h1 className="text-xl font-bold">プレビュー</h1>
         <p>まだ文字がありません。入力ページで文字を作成してください</p>
-        <Link to="/editor" className="btn btn-primary">
+        <Link href="/editor" className="btn btn-primary">
           入力ページへ
         </Link>
       </section>
@@ -77,7 +80,7 @@ export function PreviewPage() {
     const first = accepted[0];
     if (first) store.setCurrentChar(first);
     notify(`${accepted.length} 文字を入力ページの一覧に追加しました`, "success");
-    void navigate("/editor");
+    router.push("/editor");
   };
 
   return (

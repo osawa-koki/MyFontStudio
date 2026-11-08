@@ -3,7 +3,7 @@
 OTS（ブラウザと同じフォントの検証器）でも、両方のフォントを確かめる。
 
 使い方（pip install -r scripts/requirements-fonts.txt で fontTools と OTS を入れる）：
-    npm run fonts:sample && python3 scripts/check-fonts.py out/Sample.ttf out/Sample.otf
+    npm run fonts:sample && python3 scripts/check-fonts.py sample-fonts/Sample.ttf sample-fonts/Sample.otf
 """
 
 import sys

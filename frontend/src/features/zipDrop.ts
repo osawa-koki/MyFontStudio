@@ -1,12 +1,12 @@
 import { useEffect } from "react";
-import { useNavigate } from "react-router";
+import { useRouter } from "next/navigation";
 import { openZip } from "./archiveActions";
 
 const hasFiles = (e: DragEvent) => e.dataTransfer?.types.includes("Files") ?? false;
 
 /** 画面に zip をドラッグ＆ドロップすると読み込む。Layout で 1 回だけ使う */
 export function useZipDrop(): void {
-  const navigate = useNavigate();
+  const router = useRouter();
   useEffect(() => {
     const onDragOver = (e: DragEvent) => {
       if (!hasFiles(e)) return;
@@ -19,7 +19,7 @@ export function useZipDrop(): void {
       const file = e.dataTransfer?.files[0];
       if (!file) return;
       void openZip(file).then((ok) => {
-        if (ok) void navigate("/editor");
+        if (ok) router.push("/editor");
       });
     };
     window.addEventListener("dragover", onDragOver);
@@ -28,5 +28,5 @@ export function useZipDrop(): void {
       window.removeEventListener("dragover", onDragOver);
       window.removeEventListener("drop", onDrop);
     };
-  }, [navigate]);
+  }, [router]);
 }

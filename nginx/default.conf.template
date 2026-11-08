@@ -9,12 +9,16 @@ server {
     charset utf-8;
 
     gzip on;
-    gzip_types text/css application/javascript application/json image/svg+xml;
+    gzip_types text/css text/plain application/javascript application/json image/svg+xml;
     gzip_min_length 1024;
+
+    # Next.js の静的エクスポートが HTML に埋め込むインラインのスクリプトの SHA-256（$csp_script_src）。
+    # Docker のビルドで scripts/csp-hashes.mjs が作る
+    include /etc/nginx/csp.conf;
 
     # 外部への通信を一切させない（手書きのデータをブラウザの外に出さない）。
     # FontFace・Canvas・ダウンロードで blob: / data: を使う
-    set $csp "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data: blob:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+    set $csp "default-src 'self'; script-src $csp_script_src; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data: blob:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
     add_header Content-Security-Policy $csp always;
     add_header X-Content-Type-Options "nosniff" always;
@@ -32,14 +36,16 @@ server {
     }
 
     # ファイル名にハッシュの付いたビルド成果物は長くキャッシュする
-    location /assets/ {
+    location /_next/static/ {
         add_header Cache-Control "public, max-age=31536000, immutable" always;
         try_files $uri =404;
     }
 
-    # SPA：ファイルがなければ index.html を返す（/editor などを直接開けるように）。index.html は毎回確かめる
+    # ページは事前に作った HTML（/editor でも /editor/ でも editor/index.html）。毎回確かめる
     location / {
         add_header Cache-Control "no-cache" always;
-        try_files $uri /index.html;
+        try_files $uri $uri/index.html $uri.html =404;
     }
+
+    error_page 404 /404.html;
 }
