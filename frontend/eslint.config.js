@@ -5,7 +5,17 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["dist", "coverage", "out", ".next", "sample-fonts", "public/workers", "next-env.d.ts"] },
+  {
+    ignores: [
+      "dist",
+      "coverage",
+      "out",
+      ".next",
+      "sample-fonts",
+      "public/workers",
+      "next-env.d.ts",
+    ],
+  },
   {
     files: ["**/*.{ts,tsx,js}"],
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
