@@ -18,7 +18,8 @@
   - `src/types/project.ts`：プロジェクト・グリフの型（zip の JSON と同じ形）
   - `src/views/`・`src/components/`：画面（`src/pages/` は Next.js の Pages Router と衝突するので使わない）。入力・プレビューと、ストアを使う部品はクライアントコンポーネント（`"use client"`）。共通の外枠は `AppShell`。`DrawingCanvas` は 2 枚の Canvas（下：ガイド・お手本・確定したストローク、上：描いている途中）で、各ストロークの輪郭を nonzero で塗る
 - `Dockerfile`・`nginx/default.conf.template`・`render.yaml`：Node.js で静的エクスポート → 非 root の Nginx で配信（`/editor` と `/editor/` → `editor/index.html`、ないページは `404.html`、セキュリティヘッダー・CSP・`/healthz`）。Render 用
-  - CSP の `script-src` は、Next.js が HTML に埋め込むインラインのスクリプトの SHA-256（ビルド時に `frontend/scripts/csp-hashes.mjs` が集めて `/etc/nginx/csp.conf` に書く）。`'unsafe-inline'` にしない
+  - CSP の `script-src` は、Next.js が HTML に埋め込むインラインのスクリプトの SHA-256（ビルド時に `frontend/scripts/csp-hashes.mjs` が集めて `/etc/nginx/csp.conf` に書く）。`'unsafe-inline'` にしない。CSP の中身は `frontend/scripts/csp.mjs` に 1 つだけ書く（Nginx の `set $csp` の行と合わせる）
+  - GitHub Pages はヘッダーを付けられないので、`pages.yml` が `scripts/csp-meta.mjs` で HTML に CSP の `<meta>` を入れる
 - `e2e/`：動いているサーバー（コンテナ）に対する Playwright のテスト。応答とヘッダー（`server.spec.ts`）、ブラウザでの操作（`ui.spec.ts`・`editor.spec.ts`・`preview.spec.ts`・`archive.spec.ts`・`projects.spec.ts`・`guide.spec.ts`。`fixtures.ts` は beforeunload のダイアログを受け入れて数える。Canvas にはマウスで描く：`drawing.ts`）。`fixtures.ts` の `test` を使うと、コンソールのエラー（CSP の違反など）があれば失敗する
 - `docs/demo.gif`：README のデモの GIF。録画は 800px・5fps・64 色の 2 パスの GIF にする（`ffmpeg -i demo.mov -vf "fps=5,scale=800:-1:flags=lanczos,palettegen=max_colors=64" palette.png` → `ffmpeg -i demo.mov -i palette.png -lavfi "fps=5,scale=800:-1:flags=lanczos[x];[x][1:v]paletteuse" docs/demo.gif`）。元の録画はリポジトリに入れない（`.gitignore` の `*.mov`）
 - `docs/SPEC.md`：仕様書。仕様を変えたら、本文と「12. 仕様の修正履歴」を直す
@@ -103,7 +104,7 @@ docker rm -f app
 | Render | `main` への push のうち、`frontend/`・`nginx/`・`Dockerfile`・`.dockerignore` が変わったとき（Render 側の自動デプロイ、`render.yaml` の `buildFilter`） | `render.yaml` の設定で Docker イメージをビルドして動かす |
 | GitHub Pages（https://osawa-koki.github.io/MyFontStudio/ ） | `main` への push のうち、`frontend/`・`pages.yml` が変わったとき、手動（`pages.yml`） | `BASE_PATH=/MyFontStudio`（Next.js の `basePath`）でビルドし、`frontend/out` をデプロイする |
 
-- GitHub Pages では HTTP ヘッダー（CSP など）を付けられない。セキュリティヘッダーは Nginx（Render）でだけ付く。
+- GitHub Pages では HTTP ヘッダーを付けられない。CSP だけは `<meta>` で入れる（HSTS などのほかのヘッダーは Nginx（Render）でだけ付く）。
 - イメージに入るものを変えた PR のマージ後は、`publish.yml` の結果も確認する（`gh run list --workflow publish.yml --branch main --limit 1` → `gh run watch <run-id> --exit-status`）。
 - 画面を変えた PR のマージ後は、`pages.yml` の結果を確認する（`gh run list --workflow pages.yml --branch main --limit 1` → `gh run watch <run-id> --exit-status`）。
 

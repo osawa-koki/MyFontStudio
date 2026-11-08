@@ -488,7 +488,7 @@ textareaに入力した文章を、生成中のフォントでその下に表示
 | GitHub Container Registry | `main` へのpushで `publish.yml` がイメージをビルドして `ghcr.io/osawa-koki/myfontstudio`（タグ `main`・`sha-<コミット>`）にプッシュし、Trivyで脆弱性を調べる | ルートで配信 |
 | Render | ルートの `Dockerfile`（Node.jsで静的エクスポート → 非rootのNginxで配信。`PORT` で待ち受け）。`render.yaml` のBlueprint | ルートで配信。ないページは `404.html` |
 
-Nginxでは、CSP（`default-src 'self'` を基本とし、外部への通信を禁止）などのセキュリティヘッダーを付け、ヘルスチェック用に `/healthz` を返す。Next.jsの静的エクスポートはHTMLにインラインのスクリプトを埋め込むので、ビルド時にそのSHA-256を集めて `script-src` に入れる（`'unsafe-inline'` は使わない）。
+Nginxでは、CSP（`default-src 'self'` を基本とし、外部への通信を禁止）・HSTS・`Cross-Origin-Resource-Policy` などのセキュリティヘッダーを付け、ヘルスチェック用に `/healthz` を返す。Next.jsの静的エクスポートはHTMLにインラインのスクリプトを埋め込むので、ビルド時にそのSHA-256を集めて `script-src` に入れる（`'unsafe-inline'` は使わない）。GitHub PagesはHTTPヘッダーを付けられないので、ビルドしたHTMLの `<head>` の先頭に同じCSPの `<meta http-equiv="Content-Security-Policy">` を入れる（`frame-ancestors` は `<meta>` では効かない）。
 
 ### 10.3 代替案：サーバーサイド生成
 
@@ -553,6 +553,7 @@ Nginxでは、CSP（`default-src 'self'` を基本とし、外部への通信を
 | 2026-11-08 | 2・10.4 | 配信（GitHub PagesとDocker / Nginx / Render）とルーターの切り替えを追加。コードは `frontend/` に置く |
 | 2026-11-08 | 11 | Wordでの確認は実機での手動確認とし、fontTools・OTSでの検証を追加 |
 | 2026-11-08 | 2・3・10.4 | フロントエンドをVite + react-routerのSPAから、Next.js（App Router）の静的エクスポートに変更。ページごとのHTMLを事前に作る。GitHub PagesのHashRouterをやめ `basePath` にする。CSPはインラインのスクリプトのハッシュで許可する |
+| 2026-11-08 | 10.4 | NginxにHSTS・Cross-Origin-Resource-Policyを足し、GitHub PagesはHTMLにCSPの `<meta>` を入れる |
 | 2026-11-08 | 10.4 | mainへのマージでDockerイメージをGitHub Container Registryにプッシュする |
 | 2026-11-08 | 4.4・7 | 描いた履歴を文字ごとにプロジェクトに保存し、zipにも入れる（formatVersion 2、`rawdata/history/`）。描きかけの線も保存されるので、文字の移動に「そのまま移動」を足し、プロジェクトの切り替え・タブを閉じるときに描きかけでは確かめない |
 | 2026-11-08 | 3 | ブラウザに保存したデータの永続化（`navigator.storage.persist()`）と、保存の状態・使用量の表示 |
