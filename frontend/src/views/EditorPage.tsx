@@ -54,6 +54,28 @@ export function EditorPage() {
     return added;
   };
 
+  /** プリセットを、追加する文字数を示して確かめてから追加する */
+  const addPreset = async (preset: (typeof PRESETS)[number]) => {
+    const inQueue = new Set(useProjectStore.getState().project.queue);
+    const fresh = preset.chars.filter((c) => !inQueue.has(c));
+    if (fresh.length === 0) {
+      notify(`${preset.label}の ${preset.chars.length} 文字は、すべて一覧にあります`);
+      return;
+    }
+    const already = preset.chars.length - fresh.length;
+    const ok = await confirmDialog(
+      `${preset.label}を ${fresh.length} 文字追加しますか？`,
+      `${fresh.slice(0, 20).join(" ")}${fresh.length > 20 ? " …" : ""}` +
+        (already > 0
+          ? `\n（${preset.chars.length} 文字のうち、${already} 文字はすでに一覧にあります）`
+          : ""),
+      "追加する",
+    );
+    if (!ok) return;
+    const added = addText(fresh.join(""));
+    notify(`${preset.label}を ${added.length} 文字追加しました`, "success");
+  };
+
   /** 編集中の文字を保存する。advance なら次の未作成の文字へ進む */
   const save = (advance: boolean) => {
     if (!char || !commitDraft(char)) return;
@@ -176,15 +198,7 @@ export function EditorPage() {
           <div className="flex flex-wrap items-center gap-2 text-sm">
             <span className="text-slate-500">プリセット：</span>
             {PRESETS.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                className="btn"
-                onClick={() => {
-                  const added = addText(p.chars.join(""));
-                  notify(`${p.label}を ${added.length} 文字追加しました`, "success");
-                }}
-              >
+              <button key={p.id} type="button" className="btn" onClick={() => void addPreset(p)}>
                 {p.label}
               </button>
             ))}
