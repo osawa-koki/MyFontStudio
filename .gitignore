@@ -13,6 +13,10 @@ coverage/
 /frontend/out/
 /frontend/next-env.d.ts
 
+### デモの元の録画（README には docs/demo.gif を載せる） ###
+*.mov
+*.mp4
+
 ### フォントの検証の出力 ###
 /frontend/sample-fonts/
 

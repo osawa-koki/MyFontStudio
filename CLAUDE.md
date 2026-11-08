@@ -20,6 +20,7 @@
 - `Dockerfile`・`nginx/default.conf.template`・`render.yaml`：Node.js で静的エクスポート → 非 root の Nginx で配信（`/editor` と `/editor/` → `editor/index.html`、ないページは `404.html`、セキュリティヘッダー・CSP・`/healthz`）。Render 用
   - CSP の `script-src` は、Next.js が HTML に埋め込むインラインのスクリプトの SHA-256（ビルド時に `frontend/scripts/csp-hashes.mjs` が集めて `/etc/nginx/csp.conf` に書く）。`'unsafe-inline'` にしない
 - `e2e/`：動いているサーバー（コンテナ）に対する Playwright のテスト。応答とヘッダー（`server.spec.ts`）、ブラウザでの操作（`ui.spec.ts`・`editor.spec.ts`・`preview.spec.ts`・`archive.spec.ts`・`projects.spec.ts`・`guide.spec.ts`。`fixtures.ts` は beforeunload のダイアログを受け入れて数える。Canvas にはマウスで描く：`drawing.ts`）。`fixtures.ts` の `test` を使うと、コンソールのエラー（CSP の違反など）があれば失敗する
+- `docs/demo.gif`：README のデモの GIF。録画は 800px・5fps・64 色の 2 パスの GIF にする（`ffmpeg -i demo.mov -vf "fps=5,scale=800:-1:flags=lanczos,palettegen=max_colors=64" palette.png` → `ffmpeg -i demo.mov -i palette.png -lavfi "fps=5,scale=800:-1:flags=lanczos[x];[x][1:v]paletteuse" docs/demo.gif`）。元の録画はリポジトリに入れない（`.gitignore` の `*.mov`）
 - `docs/SPEC.md`：仕様書。仕様を変えたら、本文と「12. 仕様の修正履歴」を直す
 - Node.js のバージョンは `frontend/.node-version` で固定している
 - TypeScript は 6.0 系にとどめている（typescript-eslint が 7 に対応していないため。Dependabot でも上げない）
