@@ -43,7 +43,3 @@ updates:
     # node のベースイメージは frontend/.node-version と一緒に手で上げる
     ignore:
       - dependency-name: "node"
-      # Nginx は安定版（偶数のマイナー：1.30, 1.32 …）を使う。奇数のマイナー（1.31 など）は開発版（mainline）なので、
-      # マイナー・メジャーの更新は受けず、同じ安定版のダイジェストとパッチの更新だけ受ける。次の安定版には手で上げる
-      - dependency-name: "nginxinc/nginx-unprivileged"
-        update-types: ["version-update:semver-major", "version-update:semver-minor"]
