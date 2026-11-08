@@ -30,8 +30,12 @@ jobs:
         run: npm ci
       - name: Type check
         run: npm run typecheck
-      - name: Install Playwright browser
-        run: npx playwright install --with-deps chromium
+      # ESLint と Prettier
+      - name: Lint
+        run: npm run lint
+      # Chromium・Firefox・WebKit（デスクトップの Safari と iPad）で流す
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium firefox webkit
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Build image
@@ -71,3 +75,62 @@ jobs:
       - name: Show container logs
         if: always()
         run: docker logs app
+
+  # GitHub Pages 用のビルド（/MyFontStudio で配信。HTTP ヘッダーはなく、CSP は <meta>）に対して E2E を流す
+  pages:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: frontend/.node-version
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            e2e/package-lock.json
+      # pages.yml と同じ手順でビルドする
+      - name: Build for GitHub Pages
+        working-directory: ./frontend
+        env:
+          BASE_PATH: /MyFontStudio
+          NEXT_TELEMETRY_DISABLED: "1"
+        run: |
+          npm ci
+          npm run build
+          node scripts/csp-meta.mjs out
+      # /MyFontStudio/ の下に置いて、静的に配信する
+      - name: Serve
+        run: |
+          mkdir -p /tmp/pages
+          cp -R frontend/out /tmp/pages/MyFontStudio
+          (cd /tmp/pages && python3 -m http.server 8099 > /tmp/pages.log 2>&1 &)
+          for _ in $(seq 1 30); do
+            curl -fsS http://localhost:8099/MyFontStudio/ > /dev/null && exit 0
+            sleep 1
+          done
+          echo "::error::配信を始められませんでした"
+          exit 1
+      - name: Install dependencies
+        working-directory: ./e2e
+        run: npm ci
+      - name: Install Playwright browser
+        working-directory: ./e2e
+        run: npx playwright install --with-deps chromium
+      - name: Run end-to-end tests
+        working-directory: ./e2e
+        env:
+          BASE_URL: http://localhost:8099/MyFontStudio/
+          PAGES: "1"
+        run: npx playwright test --project=chromium
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: playwright-report-pages
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          retention-days: 7

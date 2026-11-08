@@ -21,7 +21,7 @@
 - `Dockerfile`・`nginx/default.conf.template`・`render.yaml`：Node.js で静的エクスポート → 非 root の Nginx で配信（`/editor` と `/editor/` → `editor/index.html`、ないページは `404.html`、セキュリティヘッダー・CSP・`/healthz`）。Render 用
   - CSP の `script-src` は、Next.js が HTML に埋め込むインラインのスクリプトの SHA-256（ビルド時に `frontend/scripts/csp-hashes.mjs` が集めて `/etc/nginx/csp.conf` に書く）。`'unsafe-inline'` にしない。CSP の中身は `frontend/scripts/csp.mjs` に 1 つだけ書く（Nginx の `set $csp` の行と合わせる）
   - GitHub Pages はヘッダーを付けられないので、`pages.yml` が `scripts/csp-meta.mjs` で HTML に CSP の `<meta>` を入れる
-- `e2e/`：動いているサーバー（コンテナ）に対する Playwright のテスト。応答とヘッダー（`server.spec.ts`）、ブラウザでの操作（`ui.spec.ts`・`editor.spec.ts`・`preview.spec.ts`・`archive.spec.ts`・`projects.spec.ts`・`guide.spec.ts`。`fixtures.ts` は beforeunload のダイアログを受け入れて数える。Canvas にはマウスで描く：`drawing.ts`）。`fixtures.ts` の `test` を使うと、コンソールのエラー（CSP の違反など）があれば失敗する
+- `e2e/`：動いているサーバーに対する Playwright のテスト。Chromium・Firefox・WebKit・iPad（WebKit）で流す（Nginx の応答・ヘッダーの `server.spec.ts` は Chromium だけ）。テストは相対パス（`page.goto("./editor")`）で開き、`PAGES=1`・`BASE_URL=http://…/MyFontStudio/` で GitHub Pages 用のビルドに対しても流せる。自動保存は時間で待たず、`storage.ts` の `waitForStored` で IndexedDB を読んで待つ。Canvas に描くときは `drawing.ts`（Canvas を画面の中央に出してから描く）。応答とヘッダー（`server.spec.ts`）、ブラウザでの操作（`ui.spec.ts`・`editor.spec.ts`・`preview.spec.ts`・`archive.spec.ts`・`projects.spec.ts`・`guide.spec.ts`。`fixtures.ts` は beforeunload のダイアログを受け入れて数える。Canvas にはマウスで描く：`drawing.ts`）。`fixtures.ts` の `test` を使うと、コンソールのエラー（CSP の違反など）があれば失敗する
 - `docs/demo.gif`：README のデモの GIF。録画は 800px・5fps・64 色の 2 パスの GIF にする（`ffmpeg -i demo.mov -vf "fps=5,scale=800:-1:flags=lanczos,palettegen=max_colors=64" palette.png` → `ffmpeg -i demo.mov -i palette.png -lavfi "fps=5,scale=800:-1:flags=lanczos[x];[x][1:v]paletteuse" docs/demo.gif`）。元の録画はリポジトリに入れない（`.gitignore` の `*.mov`）
 - `docs/SPEC.md`：仕様書。仕様を変えたら、本文と「12. 仕様の修正履歴」を直す
 - Node.js のバージョンは `frontend/.node-version` で固定している
@@ -77,8 +77,12 @@ docker build -t myfontstudio .
 docker run -d --name app -e PORT=8080 -p 8080:8080 myfontstudio
 cd ./e2e/ && npm ci && npx playwright install chromium
 npm run typecheck
-BASE_URL=http://localhost:8080 npm test
+npm run lint            # ESLint と Prettier
+BASE_URL=http://localhost:8080 npm test              # 4 つのブラウザ（npx playwright install chromium firefox webkit）
+BASE_URL=http://localhost:8080 npx playwright test --project=chromium
 docker rm -f app
+# GitHub Pages 用のビルド（frontend/ で BASE_PATH=/MyFontStudio npm run build && node scripts/csp-meta.mjs out → out を …/MyFontStudio/ に置いて配信）
+PAGES=1 BASE_URL=http://localhost:8099/MyFontStudio/ npx playwright test --project=chromium
 ```
 
 - フォントの生成（`lib/font`・`lib/glyph`）を変えたら、上の fontTools・OTS の確認を実行する（CI でも実行する）。opentype.js はバンドラー（Next.js）では ESM、Node（tsx・Vitest）では UMD として読まれるので、`otf.ts` のように両方に対応させる。
@@ -89,7 +93,7 @@ docker rm -f app
 | ワークフロー | トリガー | 内容 |
 |---|---|---|
 | `frontend-ci.yml` | すべての PR | 型チェック（`next typegen` のあと `tsc`）、ESLint・Prettier、単体テストとカバレッジ（`lib/`・`store/` の行の 85% が下限）、生成したフォントの確認（fontTools・OTS）、ビルド（ルートと `basePath` の 2 通り） |
-| `docker-ci.yml` | すべての PR | E2E テストの型チェック。イメージをビルドしてコンテナを起動し、Playwright のテストを実行する（失敗したらレポートをアーティファクトに残す） |
+| `docker-ci.yml` | すべての PR | E2E テストの型チェック・Lint。イメージをビルドしてコンテナを起動し、Playwright のテストを 4 つのブラウザで実行する。別のジョブで GitHub Pages 用のビルドを `/MyFontStudio/` で静的に配信し、Chromium で実行する（失敗したらレポートをアーティファクトに残す） |
 | `audit.yml` | `frontend/package*.json` を変えた PR、週 1 回（月曜 3:30 JST）、手動 | `npm audit --omit=dev --audit-level=high`（画面に入る依存。開発用を含む結果はサマリーに出すだけ） |
 
 - actions は、すべてコミットの SHA で固定し、行の終わりにバージョンを書く（例：`uses: actions/checkout@<40 文字の SHA> # v7.0.1`）。SHA は `gh api repos/<owner>/<repo>/commits/<タグ> --jq .sha` で調べる。
@@ -111,6 +115,7 @@ docker rm -f app
 
 ## 設計上の約束ごと
 
+- **画面のバンドルに重いライブラリを入れない**：JSZip・fonteditor-core・opentype.js は Web Worker（`workers/`）でだけ使う。画面から使うものは `lib/archive/common.ts` のように JSZip に依存しないモジュールに分ける（JSZip が使う Node の互換コードは、読み込んだ時点で `new Function` を試し、CSP の違反になる）。zod は `z.config({ jitless: true })`（`lib/archive/schema.ts`）。
 - **ブラウザの外にデータを送らない**：手書きのデータを外部に送る処理・アクセス解析・外部 CDN を入れない。フォントやライブラリはすべてバンドルする。
 - **ロジックは `frontend/src/lib/` に純粋な関数で書く**：React に依存させず、Vitest で単体テストする。画面（`pages/`・`components/`）は `lib/` を呼ぶだけにする。
 - **画面を止めない**：輪郭はグリフ単位でキャッシュし、キャッシュのない輪郭をまとめて計算するとき（zip の読み込み直後など）は `collectOutlinesAsync` で区切って計算する。性能の目安は仕様 10.1（`npm run perf`）。

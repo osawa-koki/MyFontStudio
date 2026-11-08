@@ -9,7 +9,7 @@ const chip = (page: import("@playwright/test").Page, c: string) =>
 test("「大澤太郎」を入力すると 4 文字が並び、描いて保存するたびに次の文字へ進む", async ({
   page,
 }) => {
-  await page.goto("/editor");
+  await page.goto("./editor");
   await page.getByLabel("追加する文字列").fill("大澤太郎");
   await page.getByLabel("追加する文字列").press("ControlOrMeta+Enter");
   const list = page.getByRole("region", { name: "文字一覧" });
@@ -26,8 +26,7 @@ test("「大澤太郎」を入力すると 4 文字が並び、描いて保存�
       [800, 500],
     ]);
     // 保存は Enter（テキスト入力の外）でもボタンでもよい
-    if (i % 2 === 1)
-      await page.getByRole("button", { name: "保存", exact: true }).click();
+    if (i % 2 === 1) await page.getByRole("button", { name: "保存", exact: true }).click();
     else {
       await page.getByTestId("drawing-canvas").focus();
       await page.keyboard.press("Enter");
@@ -44,21 +43,17 @@ test("「大澤太郎」を入力すると 4 文字が並び、描いて保存�
   await expect(chip(page, "郎")).toHaveAccessibleName(/作成済み/);
   // フォントができるとダウンロードできる
   const download = page.waitForEvent("download");
-  await page
-    .getByRole("button", { name: "フォントをダウンロード（.ttf）" })
-    .click();
+  await page.getByRole("button", { name: "フォントをダウンロード（.ttf）" }).click();
   expect((await download).suggestedFilename()).toBe("MyHandwriting.ttf");
 });
 
 test("未保存のストロークがあるときに移動すると確かめる。対応していない文字は通知する", async ({
   page,
 }) => {
-  await page.goto("/editor");
+  await page.goto("./editor");
   await page.getByLabel("追加する文字列").fill("あい😀");
   await page.getByRole("button", { name: "追加" }).click();
-  await expect(
-    page.getByRole("status").filter({ hasText: "対応していない文字" }),
-  ).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "対応していない文字" })).toBeVisible();
   await drawStroke(page, [
     [200, 500],
     [800, 500],
@@ -78,82 +73,63 @@ test("未保存のストロークがあるときに移動すると確かめる�
   // 右クリックで削除（作成済みは確認）
   await chip(page, "あ").click({ button: "right" });
   await page.getByRole("dialog").getByRole("button", { name: "削除" }).click();
-  await expect(
-    page.getByRole("region", { name: "文字一覧" }).getByRole("listitem"),
-  ).toHaveCount(1);
+  await expect(page.getByRole("region", { name: "文字一覧" }).getByRole("listitem")).toHaveCount(1);
 });
 
 test("文字列入力欄は複数行で入力でき、Enter は改行、Ctrl/Cmd+Enter と「追加」で追加する", async ({
   page,
 }) => {
-  await page.goto("/editor");
+  await page.goto("./editor");
   const input = page.getByLabel("追加する文字列");
   await input.fill("大澤");
   await input.press("Enter");
   await input.pressSequentially("太郎");
   await expect(input).toHaveValue("大澤\n太郎");
-  await expect(
-    page.getByRole("region", { name: "文字一覧" }).getByRole("listitem"),
-  ).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "文字一覧" }).getByRole("listitem")).toHaveCount(0);
   await page.getByRole("button", { name: "追加", exact: true }).click();
-  await expect(
-    page.getByRole("region", { name: "文字一覧" }).getByRole("listitem"),
-  ).toHaveCount(4);
+  await expect(page.getByRole("region", { name: "文字一覧" }).getByRole("listitem")).toHaveCount(4);
   await expect(input).toHaveValue("");
   await input.fill("東京\n都");
   await input.press("ControlOrMeta+Enter");
-  await expect(
-    page.getByRole("region", { name: "文字一覧" }).getByRole("listitem"),
-  ).toHaveCount(7);
+  await expect(page.getByRole("region", { name: "文字一覧" }).getByRole("listitem")).toHaveCount(7);
 });
 
-test("プリセットは、まだ一覧にない文字の数を示して確かめてから追加する", async ({
-  page,
-}) => {
-  await page.goto("/editor");
+test("プリセットは、まだ一覧にない文字の数を示して確かめてから追加する", async ({ page }) => {
+  await page.goto("./editor");
   await page.getByLabel("追加する文字列").fill("0１2");
   await page.getByLabel("追加する文字列").press("ControlOrMeta+Enter");
-  const list = page
-    .getByRole("region", { name: "文字一覧" })
-    .getByRole("listitem");
+  const list = page.getByRole("region", { name: "文字一覧" }).getByRole("listitem");
   await expect(list).toHaveCount(3);
   await page.getByRole("button", { name: "数字" }).click();
   const dialog = page.getByRole("dialog", {
     name: "数字を 8 文字追加しますか？",
   });
-  await expect(dialog).toContainText(
-    "10 文字のうち、2 文字はすでに一覧にあります",
-  );
+  await expect(dialog).toContainText("10 文字のうち、2 文字はすでに一覧にあります");
   // キャンセルすると追加しない
   await dialog.getByRole("button", { name: "キャンセル" }).click();
   await expect(list).toHaveCount(3);
   await page.getByRole("button", { name: "数字" }).click();
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "追加する" })
-    .click();
+  await page.getByRole("dialog").getByRole("button", { name: "追加する" }).click();
   await expect(list).toHaveCount(11);
   // すべて一覧にあれば、確かめずに知らせる
   await page.getByRole("button", { name: "数字" }).click();
   await expect(
-    page
-      .getByRole("status")
-      .filter({ hasText: "数字の 10 文字は、すべて一覧にあります" }),
+    page.getByRole("status").filter({ hasText: "数字の 10 文字は、すべて一覧にあります" }),
   ).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
 test("プリセットで文字群を追加でき、← → で移動できる", async ({ page }) => {
-  await page.goto("/editor");
+  await page.goto("./editor");
   await page.getByRole("button", { name: "数字" }).click();
   const dialog = page.getByRole("dialog", {
     name: "数字を 10 文字追加しますか？",
   });
   await expect(dialog).toContainText("0 1 2 3 4 5 6 7 8 9");
   await dialog.getByRole("button", { name: "追加する" }).click();
-  await expect(
-    page.getByRole("region", { name: "文字一覧" }).getByRole("listitem"),
-  ).toHaveCount(10);
+  await expect(page.getByRole("region", { name: "文字一覧" }).getByRole("listitem")).toHaveCount(
+    10,
+  );
   await expect(page.getByTestId("current-char")).toHaveText("0");
   await page.keyboard.press("ArrowRight");
   await expect(page.getByTestId("current-char")).toHaveText("1");
@@ -162,14 +138,12 @@ test("プリセットで文字群を追加でき、← → で移動できる", 
 });
 
 test("文字一覧を並び替え・検索・絞り込みできる", async ({ page }) => {
-  await page.goto("/editor");
+  await page.goto("./editor");
   await page.getByLabel("追加する文字列").fill("澤あAア1大");
   await page.getByLabel("追加する文字列").press("ControlOrMeta+Enter");
   const region = page.getByRole("region", { name: "文字一覧" });
   const chars = async () =>
-    (await region.getByRole("listitem").allTextContents()).map((t) =>
-      t.trim().charAt(0),
-    );
+    (await region.getByRole("listitem").allTextContents()).map((t) => t.trim().charAt(0));
   expect(await chars()).toEqual(["澤", "あ", "A", "ア", "1", "大"]);
 
   // 「あ」「大」を作成する（大 → あ の順に保存）
@@ -209,8 +183,10 @@ test("文字一覧を並び替え・検索・絞り込みできる", async ({ pa
   await expect(page.getByLabel("文字一覧を検索")).toHaveValue("");
 });
 
-test("ペンを検出すると指の入力を無視する。自分で OFF にしたら、ペンで描いても ON に戻らない", async ({ page }) => {
-  await page.goto("/editor");
+test("ペンを検出すると指の入力を無視する。自分で OFF にしたら、ペンで描いても ON に戻らない", async ({
+  page,
+}) => {
+  await page.goto("./editor");
   await page.getByLabel("追加する文字列").fill("あ");
   await page.getByLabel("追加する文字列").press("ControlOrMeta+Enter");
   const canvas = page.getByTestId("drawing-canvas");

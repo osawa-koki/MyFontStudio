@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 import { drawStroke } from "./drawing";
+import { waitForStored } from "./storage";
 import { expect, test } from "./fixtures";
 
 const UUID_URL = /\/editor\/\?uuid=([0-9a-f-]{36})$/;
@@ -19,12 +20,19 @@ const uuidOf = (page: Page) => UUID_URL.exec(page.url())![1]!;
 test("uuid のない URL を開くと新しいプロジェクトの uuid が付き、リロードしても自動で開き直す", async ({
   page,
 }) => {
-  await page.goto("/editor");
+  await page.goto("./editor");
   await expect(page).toHaveURL(UUID_URL);
   const id = uuidOf(page);
   await addAndDraw(page, "大澤");
   await expect(page.getByLabel("登録済み文字数")).toHaveText("1 文字");
-  await page.waitForTimeout(800); // 自動保存（500ms）を待つ
+  // 保存されて一覧に 1 文字と出るまで待つ
+  await waitForStored(
+    page,
+    "myfontstudio:projects",
+    (list) =>
+      Array.isArray(list) &&
+      list.some((p: { id: string; glyphCount: number }) => p.id === id && p.glyphCount === 1),
+  );
   await page.reload();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page).toHaveURL(new RegExp(`uuid=${id}$`));
@@ -39,16 +47,11 @@ test("uuid のない URL を開くと新しいプロジェクトの uuid が付�
   await expect(page).toHaveURL(new RegExp(`/preview/\\?uuid=${id}$`));
 });
 
-test("複数のプロジェクトを持ち、一覧から開いたり削除したりできる", async ({
-  page,
-}) => {
-  await page.goto("/");
+test("複数のプロジェクトを持ち、一覧から開いたり削除したりできる", async ({ page }) => {
+  await page.goto("./");
   await page.getByRole("button", { name: "新しくはじめる" }).click();
   await page.getByRole("dialog").getByLabel("フォント名").fill("First");
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "はじめる" })
-    .click();
+  await page.getByRole("dialog").getByRole("button", { name: "はじめる" }).click();
   await expect(page).toHaveURL(UUID_URL);
   const first = uuidOf(page);
   await addAndDraw(page, "一");
@@ -59,10 +62,7 @@ test("複数のプロジェクトを持ち、一覧から開いたり削除し�
     .click();
   await page.getByRole("button", { name: "新しくはじめる" }).click();
   await page.getByRole("dialog").getByLabel("フォント名").fill("Second");
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "はじめる" })
-    .click();
+  await page.getByRole("dialog").getByRole("button", { name: "はじめる" }).click();
   await expect(page).toHaveURL(UUID_URL);
   const second = uuidOf(page);
   expect(second).not.toBe(first);
@@ -75,23 +75,15 @@ test("複数のプロジェクトを持ち、一覧から開いたり削除し�
   await expect(page.getByRole("link", { name: /を開く$/ })).toHaveCount(2);
   await page.getByRole("link", { name: "First を開く" }).click();
   await expect(page).toHaveURL(new RegExp(`uuid=${first}$`));
-  await expect(
-    page.getByRole("button", { name: /フォント名：First/ }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("region", { name: "文字一覧" }).getByRole("listitem"),
-  ).toHaveCount(1);
+  await expect(page.getByRole("button", { name: /フォント名：First/ })).toBeVisible();
+  await expect(page.getByRole("region", { name: "文字一覧" }).getByRole("listitem")).toHaveCount(1);
 
   // URL を直接開いても、そのプロジェクトになる
-  await page.goto(`/editor/?uuid=${second}`);
-  await expect(
-    page.getByRole("button", { name: /フォント名：Second/ }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("region", { name: "文字一覧" }).getByRole("listitem"),
-  ).toHaveCount(2);
+  await page.goto(`./editor/?uuid=${second}`);
+  await expect(page.getByRole("button", { name: /フォント名：Second/ })).toBeVisible();
+  await expect(page.getByRole("region", { name: "文字一覧" }).getByRole("listitem")).toHaveCount(2);
 
-  await page.goto("/");
+  await page.goto("./");
   await page.getByRole("button", { name: "Second を削除" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "削除" }).click();
   await expect(page.getByRole("link", { name: /を開く$/ })).toHaveCount(1);
@@ -99,52 +91,36 @@ test("複数のプロジェクトを持ち、一覧から開いたり削除し�
 });
 
 test("uuid の形が正しくなければ案内する", async ({ page }) => {
-  await page.goto("/editor/?uuid=../../etc");
-  await expect(
-    page.getByRole("heading", { name: "プロジェクトを開けません" }),
-  ).toBeVisible();
+  await page.goto("./editor/?uuid=../../etc");
+  await expect(page.getByRole("heading", { name: "プロジェクトを開けません" })).toBeVisible();
   await page.getByRole("link", { name: "プロジェクトの一覧へ" }).click();
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText(
-    "手書きフォントを作ろう",
-  );
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("手書きフォントを作ろう");
 });
 
 test("ヘッダーのメニューから、新しいプロジェクトの作成・切り替え・ZIP の読み込みができる", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("./");
   const switcher = page.getByRole("button", { name: /^プロジェクト：/ });
-  await expect(switcher).toHaveAccessibleName(
-    "プロジェクト：未選択（クリックで切り替え）",
-  );
+  await expect(switcher).toHaveAccessibleName("プロジェクト：未選択（クリックで切り替え）");
 
   // 新しいプロジェクト（1 つ目）
   await switcher.click();
   await expect(page.getByRole("menu", { name: "プロジェクト" })).toContainText(
     "まだプロジェクトがありません",
   );
-  await page
-    .getByRole("menuitem", { name: "新しいプロジェクト", exact: true })
-    .click();
+  await page.getByRole("menuitem", { name: "新しいプロジェクト", exact: true }).click();
   await page.getByRole("dialog").getByLabel("フォント名").fill("Alpha");
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "はじめる" })
-    .click();
+  await page.getByRole("dialog").getByRole("button", { name: "はじめる" }).click();
   await expect(page).toHaveURL(UUID_URL);
   const alpha = uuidOf(page);
   await addAndDraw(page, "甲");
 
   // 新しいプロジェクト（2 つ目）
   await switcher.click();
-  await page
-    .getByRole("menuitem", { name: "新しいプロジェクト", exact: true })
-    .click();
+  await page.getByRole("menuitem", { name: "新しいプロジェクト", exact: true }).click();
   await page.getByRole("dialog").getByLabel("フォント名").fill("Beta");
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "はじめる" })
-    .click();
+  await page.getByRole("dialog").getByRole("button", { name: "はじめる" }).click();
   await expect(switcher).toHaveAccessibleName(/プロジェクト：Beta/);
   await addAndDraw(page, "乙丙");
 
@@ -158,22 +134,18 @@ test("ヘッダーのメニューから、新しいプロジェクトの作成�
   await switcher.click();
   const menu = page.getByRole("menu", { name: "プロジェクト" });
   await expect(menu.getByRole("menuitemradio")).toHaveCount(2);
-  await expect(
-    menu.getByRole("menuitemradio", { name: /Beta/ }),
-  ).toHaveAttribute("aria-checked", "true");
+  await expect(menu.getByRole("menuitemradio", { name: /Beta/ })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
   await menu.getByRole("menuitemradio", { name: /Alpha/ }).click();
   await expect(page).toHaveURL(new RegExp(`uuid=${alpha}$`));
   await expect(switcher).toHaveAccessibleName(/プロジェクト：Alpha/);
-  await expect(
-    page.getByRole("region", { name: "文字一覧" }).getByRole("listitem"),
-  ).toHaveCount(1);
+  await expect(page.getByRole("region", { name: "文字一覧" }).getByRole("listitem")).toHaveCount(1);
   await switcher.click();
   await menu.getByRole("menuitemradio", { name: /Beta/ }).click();
   await expect(switcher).toHaveAccessibleName(/プロジェクト：Beta/);
-  await expect(canvas).toHaveAttribute(
-    "aria-label",
-    /「丙」の手書き入力欄（ストローク 1 本）/,
-  );
+  await expect(canvas).toHaveAttribute("aria-label", /「丙」の手書き入力欄（ストローク 1 本）/);
   await page.getByRole("button", { name: "元に戻す" }).click();
   await expect(canvas).toHaveAttribute("aria-label", /ストローク 0 本/);
   await switcher.click();
@@ -213,13 +185,10 @@ test("プロジェクトの切り替えメニューとダウンロードのメ�
   page,
 }) => {
   for (const name of ["Alpha", "Beta"]) {
-    await page.goto("/");
+    await page.goto("./");
     await page.getByRole("button", { name: "新しくはじめる" }).click();
     await page.getByRole("dialog").getByLabel("フォント名").fill(name);
-    await page
-      .getByRole("dialog")
-      .getByRole("button", { name: "はじめる" })
-      .click();
+    await page.getByRole("dialog").getByRole("button", { name: "はじめる" }).click();
     await expect(page).toHaveURL(UUID_URL);
   }
   await addAndDraw(page, "乙");
@@ -231,20 +200,14 @@ test("プロジェクトの切り替えメニューとダウンロードのメ�
   await page.keyboard.press("Enter");
   await expect(menu.getByRole("menuitemradio", { name: /Beta/ })).toBeFocused();
   await page.keyboard.press("ArrowDown");
-  await expect(
-    menu.getByRole("menuitemradio", { name: /Alpha/ }),
-  ).toBeFocused();
+  await expect(menu.getByRole("menuitemradio", { name: /Alpha/ })).toBeFocused();
   // End で最後の項目、Home で最初の項目、↑ で端から折り返す
   await page.keyboard.press("End");
-  await expect(
-    menu.getByRole("menuitem", { name: /ZIP を読み込む/ }),
-  ).toBeFocused();
+  await expect(menu.getByRole("menuitem", { name: /ZIP を読み込む/ })).toBeFocused();
   await page.keyboard.press("Home");
   await expect(menu.getByRole("menuitemradio", { name: /Beta/ })).toBeFocused();
   await page.keyboard.press("ArrowUp");
-  await expect(
-    menu.getByRole("menuitem", { name: /ZIP を読み込む/ }),
-  ).toBeFocused();
+  await expect(menu.getByRole("menuitem", { name: /ZIP を読み込む/ })).toBeFocused();
   // Esc で閉じてボタンに戻る
   await page.keyboard.press("Escape");
   await expect(menu).toBeHidden();
