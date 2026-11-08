@@ -2,33 +2,23 @@ import { ArchiveError, archiveFileName, buildArchive, readArchive } from "../lib
 import { downloadBlob } from "../lib/download";
 import { collectOutlines } from "../lib/font/outlines";
 import { isoWithOffset } from "../lib/project/chars";
-import { isDirty } from "../lib/stroke/history";
-import { useEditorStore } from "../store/editorStore";
 import { openAsNewProject } from "./projects";
 import { useProjectStore } from "../store/projectStore";
 import { askDialog, notify } from "../store/uiStore";
 import { commitDraft } from "./glyphActions";
 import { renderGlyphPng } from "./png";
+import { unsavedDraftChars } from "./unsavedWarning";
 
 /** 読み込める zip の大きさの上限（圧縮後） */
 const MAX_ZIP_BYTES = 200 * 1024 * 1024;
 
-/** 入力ページに保存していないストロークがある文字 */
-function unsavedChars(): string[] {
-  const { histories } = useEditorStore.getState();
-  const { glyphs } = useProjectStore.getState().project;
-  return Object.entries(histories)
-    .filter(([c, h]) => h.strokes.length > 0 && isDirty(h, glyphs[c]?.strokes))
-    .map(([c]) => c);
-}
-
 /** 「zip で保存」（仕様 7.4）。描きかけの文字があれば、先に保存するか確かめる */
 export async function saveZip(): Promise<void> {
-  const drafts = unsavedChars();
+  const drafts = unsavedDraftChars();
   if (drafts.length > 0) {
     const { value } = await askDialog({
       title: "この文字も保存しますか？",
-      message: `保存していないストロークがあります：${drafts.join(" ")}`,
+      message: `グリフとして保存していない描きかけの線があります：${drafts.join(" ")}（描いた履歴は保存しないを選んでも zip に入ります）`,
       buttons: [
         { label: "キャンセル", value: "cancel" },
         { label: "保存しない", value: "skip" },

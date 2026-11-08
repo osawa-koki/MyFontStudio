@@ -11,10 +11,11 @@ import {
 import type { PenParams, Stroke } from "../types/project";
 import { useProjectStore } from "./projectStore";
 
-/** 入力ページの描きかけの状態（保存するまでプロジェクトには入れない） */
+/**
+ * 入力ページの操作。描いた履歴はプロジェクト（project.drawings）に入れて保存する（zip にも入る）。
+ * ここで持つのは、文字ごとのペンと、指の入力を無視するかだけ
+ */
 interface EditorState {
-  /** 文字ごとの描きかけのストロークと履歴 */
-  histories: Record<string, DrawingHistory>;
   /** 文字ごとのペンのパラメータ（作成済みの文字は保存したときの値から始める） */
   pens: Record<string, PenParams>;
   /** ペンを検出したら、指（touch）の入力を無視する（パームリジェクション） */
@@ -25,19 +26,17 @@ interface EditorState {
   redo(char: string): void;
   clear(char: string): void;
   setPen(char: string, pen: Partial<PenParams>): void;
-  /** 描きかけを捨てて、保存済みの状態に戻す */
+  /** 描きかけを捨てて、保存済みの線だけに戻す（その文字の履歴も消える） */
   discard(char: string): void;
-  /** すべての描きかけを捨てる（プロジェクトを読み込んだときなど） */
+  /** 文字ごとのペンを忘れる（プロジェクトを切り替えたときなど） */
   reset(): void;
   setIgnoreTouch(value: boolean): void;
 }
 
-/** 文字の描きかけの状態。なければ保存済みのストロークから始める */
-export function historyFor(state: EditorState, char: string): DrawingHistory {
-  return (
-    state.histories[char] ??
-    createHistory(useProjectStore.getState().project.glyphs[char]?.strokes ?? [])
-  );
+/** 文字の描いた履歴。なければ保存済みの線から作る */
+export function historyFor(char: string): DrawingHistory {
+  const { project } = useProjectStore.getState();
+  return project.drawings[char] ?? createHistory(project.glyphs[char]?.strokes);
 }
 
 /** 文字のペン。なければ保存したときの値、未作成ならプロジェクトの初期値 */
@@ -52,43 +51,40 @@ export function penFor(state: EditorState, char: string): PenParams {
   return useProjectStore.getState().project.defaults.pen;
 }
 
-export const useEditorStore = create<EditorState>()((set, get) => {
-  const update = (char: string, f: (h: DrawingHistory) => DrawingHistory) =>
-    set((s) => ({ histories: { ...s.histories, [char]: f(historyFor(get(), char)) } }));
-  return {
-    histories: {},
-    pens: {},
-    ignoreTouch: false,
-    commitStroke: (char, stroke) => update(char, (h) => addStroke(h, stroke)),
-    undo: (char) => update(char, undo),
-    redo: (char) => update(char, redo),
-    clear: (char) => update(char, clearStrokes),
-    setPen(char, pen) {
-      const next = { ...penFor(get(), char), ...pen };
-      set((s) => ({ pens: { ...s.pens, [char]: next } }));
-      // 以降に描く文字の初期値にもする
-      const project = useProjectStore.getState();
-      project.setDefaults({ pen: { ...project.project.defaults.pen, ...pen } });
-    },
-    discard(char) {
-      set((s) => {
-        const histories = { ...s.histories };
-        const pens = { ...s.pens };
-        delete histories[char];
-        delete pens[char];
-        return { histories, pens };
-      });
-    },
-    reset: () => set({ histories: {}, pens: {} }),
-    setIgnoreTouch: (value) => set({ ignoreTouch: value }),
-  };
-});
+const updateDrawing = (char: string, f: (h: DrawingHistory) => DrawingHistory) =>
+  useProjectStore.getState().updateDrawing(char, f);
+
+export const useEditorStore = create<EditorState>()((set, get) => ({
+  pens: {},
+  ignoreTouch: false,
+  commitStroke: (char, stroke) => updateDrawing(char, (h) => addStroke(h, stroke)),
+  undo: (char) => updateDrawing(char, undo),
+  redo: (char) => updateDrawing(char, redo),
+  clear: (char) => updateDrawing(char, clearStrokes),
+  setPen(char, pen) {
+    const next = { ...penFor(get(), char), ...pen };
+    set((s) => ({ pens: { ...s.pens, [char]: next } }));
+    // 以降に描く文字の初期値にもする
+    const project = useProjectStore.getState();
+    project.setDefaults({ pen: { ...project.project.defaults.pen, ...pen } });
+  },
+  discard(char) {
+    useProjectStore.getState().resetDrawing(char);
+    set((s) => {
+      const pens = { ...s.pens };
+      delete pens[char];
+      return { pens };
+    });
+  },
+  reset: () => set({ pens: {} }),
+  setIgnoreTouch: (value) => set({ ignoreTouch: value }),
+}));
 
 const NO_STROKES: Stroke[] = [];
 
-/** 画面用：文字の描きかけの状態（セレクターが毎回新しいオブジェクトを返さないよう、値を選んでから組み立てる） */
+/** 画面用：文字の描いた履歴（セレクターが毎回新しいオブジェクトを返さないよう、値を選んでから組み立てる） */
 export function useHistory(char: string): DrawingHistory {
-  const own = useEditorStore((s) => s.histories[char]);
+  const own = useProjectStore((s) => s.project.drawings[char]);
   const saved = useProjectStore((s) => s.project.glyphs[char]?.strokes);
   return useMemo(() => own ?? createHistory(saved ?? NO_STROKES), [own, saved]);
 }

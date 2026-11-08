@@ -119,11 +119,12 @@ export function useProjectPersistence(): void {
       const p = state.project;
       const q = prev.project;
       if (p === q && state.dirty === prev.dirty) return;
-      // 文字の追加・グリフの保存・設定の変更はすぐに保存する（すぐにリロードされても消えないように）。
+      // 文字の追加・グリフの保存・描いた線・設定の変更はすぐに保存する（すぐにリロードされても消えないように）。
       // 頻繁に変わる文章（プレビューの textarea）などは 500ms 待ってまとめて保存する
       if (
         p.queue !== q.queue ||
         p.glyphs !== q.glyphs ||
+        p.drawings !== q.drawings ||
         p.font !== q.font ||
         p.defaults !== q.defaults
       ) {

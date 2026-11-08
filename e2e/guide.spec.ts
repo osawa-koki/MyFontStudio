@@ -30,7 +30,7 @@ test("使い方ページから、フォント名を決めて新しいプロジ�
   ).toBeVisible();
 });
 
-test("保存していない描きかけのストロークがあると、タブを閉じる・再読み込みする前に警告する", async ({
+test("描いた線は描いた履歴として残り、再読み込みしても元に戻す・やり直しができる", async ({
   page,
   beforeUnloadCount,
 }) => {
@@ -39,18 +39,52 @@ test("保存していない描きかけのストロークがあると、タブ�
   await page.reload();
   expect(beforeUnloadCount.value).toBe(0);
 
-  await page.getByLabel("追加する文字列").fill("あ");
+  await page.getByLabel("追加する文字列").fill("あい");
   await page.getByLabel("追加する文字列").press("ControlOrMeta+Enter");
-  // 文字の追加は自動で保存されるので警告しない
-  await page.waitForTimeout(800);
-  await page.reload();
-  expect(beforeUnloadCount.value).toBe(0);
   await drawStroke(page, [
     [200, 500],
     [800, 500],
   ]);
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  // 「い」に描きかけを 2 本
+  for (const y of [300, 700]) {
+    await drawStroke(page, [
+      [200, y],
+      [800, y],
+    ]);
+  }
+  // 描いた線はすぐに保存する（保存が終わってから再読み込みする）
+  await page.waitForTimeout(300);
   await page.reload();
-  expect(beforeUnloadCount.value).toBe(1);
+
+  const canvas = page.getByTestId("drawing-canvas");
+  await expect(page.getByTestId("current-char")).toHaveText("い");
+  await expect(canvas).toHaveAttribute("aria-label", /ストローク 2 本/);
+  await expect(page.getByText("未保存のストロークがあります")).toBeVisible();
+  await page.getByTestId("drawing-canvas").focus();
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(canvas).toHaveAttribute("aria-label", /ストローク 1 本/);
+  await page.keyboard.press("ControlOrMeta+Shift+z");
+  await expect(canvas).toHaveAttribute("aria-label", /ストローク 2 本/);
+
+  // 保存したあとも、その文字の履歴で元に戻せる
+  await page
+    .getByRole("region", { name: "文字一覧" })
+    .getByRole("button", { name: /^あ（/ })
+    .click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "そのまま移動" })
+    .click();
+  await expect(canvas).toHaveAttribute("aria-label", /「あ」.*ストローク 1 本/);
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(canvas).toHaveAttribute("aria-label", /ストローク 0 本/);
+  // 「い」の描きかけはそのまま
+  await page.keyboard.press("ArrowRight");
+  // 「あ」は元に戻して保存済みと違うので確かめられる。描きかけのまま移る
+  await page.getByRole("dialog").getByRole("button", { name: "そのまま移動" }).click();
+  await expect(page.getByTestId("current-char")).toHaveText("い");
+  await expect(canvas).toHaveAttribute("aria-label", /ストローク 2 本/);
 });
 
 test("このブラウザへの保存の状態（永続化・使用量）を表示し、永続化を頼める", async ({

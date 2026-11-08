@@ -52,6 +52,8 @@ test("zip で保存 → リロード → zip を開くで、一覧・ストロ�
       "rawdata/vector/U+5341.json",
       "rawdata/preview/U+53E3.png",
       "rawdata/preview/U+5341.png",
+      "rawdata/history/U+53E3.json",
+      "rawdata/history/U+5341.json",
     ].sort(),
   );
   const json = JSON.parse(await zip.file("project.json")!.async("string"));
@@ -63,6 +65,12 @@ test("zip で保存 → リロード → zip を開くで、一覧・ストロ�
     await zip.file("rawdata/vector/U+5341.json")!.async("string"),
   );
   expect(vector.strokes).toHaveLength(2);
+  // 描いた履歴も入る
+  expect(json.formatVersion).toBe(2);
+  const history = JSON.parse(
+    await zip.file("rawdata/history/U+5341.json")!.async("string"),
+  );
+  expect(history.history.ops).toHaveLength(2);
 
   // 使い方ページ（プロジェクトを開いていない状態）から、zip を新しいプロジェクトとして開く
   await page.goto("/");
@@ -82,6 +90,13 @@ test("zip で保存 → リロード → zip を開くで、一覧・ストロ�
     "aria-label",
     /ストローク 2 本/,
   );
+  // zip から開き直しても、描いた履歴で元に戻せる
+  await page.getByRole("button", { name: "元に戻す" }).click();
+  await expect(page.getByTestId("drawing-canvas")).toHaveAttribute(
+    "aria-label",
+    /ストローク 1 本/,
+  );
+  await page.getByRole("button", { name: "やり直し" }).click();
   await page
     .getByRole("navigation", { name: "ページ" })
     .getByRole("link", { name: "プレビュー" })
@@ -104,12 +119,9 @@ test.describe("壊れた zip・無関係な zip を開いても落ちない", ()
     });
     // Next.js のルートアナウンサーも role="alert" なので、文言で絞る
     await expect(
-      page
-        .getByRole("alert")
-        .filter({
-          hasText:
-            "「broken.zip」を開けませんでした：zip ファイルではありません",
-        }),
+      page.getByRole("alert").filter({
+        hasText: "「broken.zip」を開けませんでした：zip ファイルではありません",
+      }),
     ).toBeVisible();
     await expect(page).toHaveURL(/\/$/);
   });

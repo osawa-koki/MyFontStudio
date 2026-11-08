@@ -5,7 +5,14 @@ import {
   sanitizeFamilyName,
 } from "../lib/project/project";
 import { createProjectId } from "../lib/projects/repository";
-import type { FontSettings, GlyphData, Project, ProjectDefaults } from "../types/project";
+import { createHistory } from "../lib/stroke/history";
+import type {
+  DrawingHistory,
+  FontSettings,
+  GlyphData,
+  Project,
+  ProjectDefaults,
+} from "../types/project";
 
 export interface ProjectState {
   project: Project;
@@ -28,6 +35,10 @@ export interface ProjectState {
   /** 文字一覧から削除する（作成済みのグリフも消す） */
   removeChar(char: string): void;
   saveGlyph(glyph: GlyphData): void;
+  /** 文字の描いた履歴を変える（f に今の履歴を渡す。なければ保存済みの線から作った履歴） */
+  updateDrawing(char: string, f: (h: DrawingHistory) => DrawingHistory): void;
+  /** 文字の描いた履歴を、保存済みの線だけの状態に戻す（描きかけを捨てる） */
+  resetDrawing(char: string): void;
   setCurrentChar(char: string | null): void;
   /** 文章を変える。dirty: false なら未保存にしない（初期値を入れるとき） */
   setPreviewText(text: string, options?: { dirty?: boolean }): void;
@@ -102,9 +113,16 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   removeChar(char) {
     set((s) => {
       const glyphs = { ...s.project.glyphs };
+      const drawings = { ...s.project.drawings };
       delete glyphs[char];
+      delete drawings[char];
       return {
-        project: { ...s.project, queue: s.project.queue.filter((c) => c !== char), glyphs },
+        project: {
+          ...s.project,
+          queue: s.project.queue.filter((c) => c !== char),
+          glyphs,
+          drawings,
+        },
         currentChar: s.currentChar === char ? null : s.currentChar,
         dirty: true,
       };
@@ -120,6 +138,24 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         project: { ...s.project, queue, glyphs: { ...s.project.glyphs, [glyph.char]: glyph } },
         dirty: true,
       };
+    });
+  },
+
+  updateDrawing(char, f) {
+    set((s) => {
+      const current = s.project.drawings[char] ?? createHistory(s.project.glyphs[char]?.strokes);
+      const next = f(current);
+      if (next === current && s.project.drawings[char]) return {};
+      return { project: { ...s.project, drawings: { ...s.project.drawings, [char]: next } } };
+    });
+  },
+
+  resetDrawing(char) {
+    set((s) => {
+      if (!s.project.drawings[char]) return {};
+      const drawings = { ...s.project.drawings };
+      delete drawings[char];
+      return { project: { ...s.project, drawings } };
     });
   },
 

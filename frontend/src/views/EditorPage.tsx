@@ -10,7 +10,7 @@ import { commitDraft } from "../features/glyphActions";
 import { PRESETS, isCreated, nextUncreated, parseInputChars, prevChar } from "../lib/project/chars";
 import { toCodepointLabel } from "../lib/project/project";
 import { projectHref } from "../lib/projects/repository";
-import { canRedo, canUndo, isDirty } from "../lib/stroke/history";
+import { canRedo, canUndo, isDirty, strokesOf } from "../lib/stroke/history";
 import { useEditorStore, useHistory, usePen } from "../store/editorStore";
 import { useProjectStore } from "../store/projectStore";
 import { askDialog, confirmDialog, notify } from "../store/uiStore";
@@ -39,6 +39,7 @@ export function EditorPage() {
       : (nextUncreated(queue, glyphs, null) ?? queue[0] ?? null);
   const history = useHistory(char ?? "");
   const pen = usePen(char ?? "");
+  const strokes = strokesOf(history);
   const dirty = char !== null && isDirty(history, glyphs[char]?.strokes);
   const allDone = queue.length > 0 && queue.every((c) => isCreated(glyphs, c));
 
@@ -92,17 +93,19 @@ export function EditorPage() {
     if (char && dirty) {
       const { value } = await askDialog({
         title: `「${char}」は保存されていません`,
-        message: "描いたストロークをどうしますか？",
+        message:
+          "描いた線をどうしますか？「そのまま移動」すると、描きかけのまま残ります（あとで戻って続きを描けます）。",
         buttons: [
           { label: "キャンセル", value: "cancel" },
           { label: "破棄して移動", value: "discard", variant: "danger" },
+          { label: "そのまま移動", value: "keep" },
           { label: "保存して移動", value: "save", variant: "primary" },
         ],
         cancelValue: "cancel",
       });
       if (value === "cancel") return;
       if (value === "save") save(false);
-      else editor.discard(char);
+      else if (value === "discard") editor.discard(char);
     }
     project.setCurrentChar(target);
   };
@@ -238,7 +241,7 @@ export function EditorPage() {
           </div>
           <DrawingCanvas
             char={char}
-            strokes={history.strokes}
+            strokes={strokes}
             pen={pen}
             usePressure={defaults.usePressure}
             showModel={defaults.showModel}
@@ -269,7 +272,7 @@ export function EditorPage() {
             <button
               type="button"
               className="btn"
-              disabled={history.strokes.length === 0}
+              disabled={strokes.length === 0}
               onClick={() => editor.clear(char)}
             >
               クリア
@@ -295,7 +298,7 @@ export function EditorPage() {
             <button
               type="button"
               className="btn btn-primary min-w-24"
-              disabled={history.strokes.length === 0}
+              disabled={strokes.length === 0}
               onClick={() => save(true)}
               title="Enter"
             >

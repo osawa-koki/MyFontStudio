@@ -1,45 +1,67 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { strokesOf } from "../lib/stroke/history";
 import { KUCHI } from "../lib/testing/fixtures";
 import { historyFor, penFor, useEditorStore } from "./editorStore";
 import { useProjectStore } from "./projectStore";
 
 const e = () => useEditorStore.getState();
+const p = () => useProjectStore.getState();
 const stroke = { points: [[1, 1, 0.5]] as [number, number, number][] };
+const strokes = (c: string) => strokesOf(historyFor(c));
 
 describe("editorStore", () => {
   beforeEach(() => {
-    useProjectStore.getState().newProject();
+    p().newProject();
     e().reset();
   });
 
-  it("描きかけがなければ保存済みのストロークから始める", () => {
-    useProjectStore.getState().saveGlyph(KUCHI);
-    expect(historyFor(e(), "口").strokes).toBe(KUCHI.strokes);
-    expect(historyFor(e(), "x").strokes).toEqual([]);
+  it("描いた履歴がなければ保存済みの線から始める", () => {
+    p().saveGlyph(KUCHI);
+    expect(strokes("口")).toEqual(KUCHI.strokes);
+    expect(strokes("x")).toEqual([]);
   });
 
-  it("文字ごとに履歴を持つ", () => {
+  it("文字ごとの履歴をプロジェクトに入れる", () => {
     e().commitStroke("a", stroke);
     e().commitStroke("b", stroke);
     e().commitStroke("b", stroke);
     e().undo("b");
-    expect(historyFor(e(), "a").strokes).toHaveLength(1);
-    expect(historyFor(e(), "b").strokes).toHaveLength(1);
+    expect(strokes("a")).toHaveLength(1);
+    expect(strokes("b")).toHaveLength(1);
+    expect(p().project.drawings.b!.ops).toHaveLength(2);
     e().redo("b");
-    expect(historyFor(e(), "b").strokes).toHaveLength(2);
+    expect(strokes("b")).toHaveLength(2);
     e().clear("b");
-    expect(historyFor(e(), "b").strokes).toHaveLength(0);
+    expect(strokes("b")).toHaveLength(0);
     e().discard("b");
-    expect(e().histories.b).toBeUndefined();
+    expect(p().project.drawings.b).toBeUndefined();
+  });
+
+  it("変わらない操作（何もない状態の元に戻すなど）では履歴を作らない", () => {
+    p().saveGlyph(KUCHI);
+    const before = p().project;
+    e().redo("口");
+    expect(p().project.drawings["口"]).toBeDefined();
+    const after = p().project;
+    e().redo("口");
+    expect(p().project).toBe(after);
+    expect(before).not.toBe(after);
+  });
+
+  it("文字を一覧から消すと履歴も消える", () => {
+    p().addChars(["a"]);
+    e().commitStroke("a", stroke);
+    p().removeChar("a");
+    expect(p().project.drawings.a).toBeUndefined();
   });
 
   it("ペンは保存したときの値→初期値の順。変えると初期値にもする", () => {
-    useProjectStore.getState().saveGlyph({ ...KUCHI, pen: { ...KUCHI.pen, size: 70 } });
+    p().saveGlyph({ ...KUCHI, pen: { ...KUCHI.pen, size: 70 } });
     expect(penFor(e(), "口").size).toBe(70);
     expect(penFor(e(), "x").size).toBe(40);
     e().setPen("x", { size: 55 });
     expect(penFor(e(), "x").size).toBe(55);
-    expect(useProjectStore.getState().project.defaults.pen.size).toBe(55);
+    expect(p().project.defaults.pen.size).toBe(55);
     expect(penFor(e(), "口").size).toBe(70);
   });
 
