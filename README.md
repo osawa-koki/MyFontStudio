@@ -1,5 +1,11 @@
 # MyFontStudio
 
+[![frontend-ci](https://github.com/osawa-koki/MyFontStudio/actions/workflows/frontend-ci.yml/badge.svg)](https://github.com/osawa-koki/MyFontStudio/actions/workflows/frontend-ci.yml)
+[![docker-ci](https://github.com/osawa-koki/MyFontStudio/actions/workflows/docker-ci.yml/badge.svg)](https://github.com/osawa-koki/MyFontStudio/actions/workflows/docker-ci.yml)
+[![audit](https://github.com/osawa-koki/MyFontStudio/actions/workflows/audit.yml/badge.svg)](https://github.com/osawa-koki/MyFontStudio/actions/workflows/audit.yml)
+[![pages](https://github.com/osawa-koki/MyFontStudio/actions/workflows/pages.yml/badge.svg)](https://github.com/osawa-koki/MyFontStudio/actions/workflows/pages.yml)
+[![publish](https://github.com/osawa-koki/MyFontStudio/actions/workflows/publish.yml/badge.svg)](https://github.com/osawa-koki/MyFontStudio/actions/workflows/publish.yml)
+
 ✍️✍️✍️ 自分の手書き文字から、PC にインストールして Word などで使えるフォント（.ttf / .otf）を作る Web アプリ！
 
 すべての処理はブラウザの中で行い、手書きのデータは外部に送信しない。
