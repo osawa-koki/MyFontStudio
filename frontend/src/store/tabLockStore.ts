@@ -20,8 +20,11 @@ export const useTabLockStore = create<TabLockState>()((set) => ({
   set: (status) => set({ status }),
 }));
 
-/** 保存してよいか（編集しているタブか） */
+/**
+ * 保存してよいか。ほかのタブで編集しているとき（blocked・released）だけ保存しない。
+ * pending（ページを移ってロックを取り直している途中など）は保存する（その間の変更が保存されずに残らないように）
+ */
 export const canEditInThisTab = () => {
   const { status } = useTabLockStore.getState();
-  return status === "owner" || status === "unsupported";
+  return status !== "blocked" && status !== "released";
 };
