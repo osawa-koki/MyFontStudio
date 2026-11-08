@@ -1,4 +1,4 @@
-import { del, get, set, setMany } from "idb-keyval";
+import { del, delMany, get, getMany, set, setMany } from "idb-keyval";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { nextUncreated } from "../lib/project/chars";
@@ -22,10 +22,13 @@ import { useProjectStore } from "../store/projectStore";
 import type { Project } from "../types/project";
 
 /** IndexedDB（idb-keyval）。プライベートブラウズなどで使えないときは保存に失敗する（警告だけ出す） */
-const idb: KeyValueStore = { get, set, setMany, del };
+const idb: KeyValueStore = { get, getMany, set, setMany, del, delMany };
 
 /** 保存したことのあるプロジェクトの ID（中身が空になっても保存し続ける） */
 const stored = new Set<string>();
+
+/** プロジェクトごとの、最後に保存した（または読み込んだ）内容。変わった文字のグリフ・描いた履歴だけを書くのに使う */
+const lastSaved = new Map<string, Project>();
 
 /** IndexedDB への書き込みは 1 本の列に並べて順に行う（一覧の書き換えが並行して消えないように） */
 let writes: Promise<void> = Promise.resolve();
@@ -62,7 +65,10 @@ function save(id: string, project: Project, dirty: boolean): Promise<void> {
   if (!stored.has(id) && !hasContent(project)) return writes;
   stored.add(id);
   askPersistenceOnce();
-  return enqueue(() => saveProject(idb, id, project, dirty));
+  return enqueue(async () => {
+    await saveProject(idb, id, project, dirty, new Date(), lastSaved.get(id));
+    lastSaved.set(id, project);
+  });
 }
 
 const saveLater = debounce((id: string, project: Project, dirty: boolean) => {
@@ -99,6 +105,7 @@ export async function deleteStoredProject(id: string): Promise<void> {
     useProjectStore.getState().closeProject();
   }
   stored.delete(id);
+  lastSaved.delete(id);
   await enqueue(() => deleteProject(idb, id));
 }
 
@@ -182,6 +189,7 @@ export function useProjectFromUrl(): ProjectUrlState {
         if (cancelled || uuid === useProjectStore.getState().projectId) return;
         if (loaded) {
           stored.add(uuid);
+          lastSaved.set(uuid, loaded.project);
           openLoaded(loaded.project, uuid, loaded.dirty);
         } else {
           useEditorStore.getState().reset();

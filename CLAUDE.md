@@ -10,7 +10,7 @@
     - `glyph/`：ストローク → 輪郭 → `GlyphOutline`（仕様 5 章）。`outline.ts` が手順（perfect-freehand → polygon-clipping の union → Douglas–Peucker → 中点の二次ベジェ → フォント座標・向き）、`width.ts` が送り幅（East Asian Width）、`path.ts` が SVG の path、`constants.ts` がメトリクスなどの値
     - `font/`：フォントの生成（仕様 6 章）。`build.ts` が入口（`GlyphOutline[]` とフォントの設定 → ArrayBuffer。fonteditor-core・opentype.js が大きいので、画面からは動的 import で読み、別のチャンクにする）、`outlines.ts` がプロジェクトから輪郭を集める処理、`ttf.ts`（fonteditor-core）・`otf.ts`（opentype.js）がアダプタ、`sfnt.ts` が書き出したあとのテーブルの差し替え（name・OS/2）と書き換え（head・hhea・maxp・post）、`glyphs.ts` が .notdef・スペースを含むグリフの一覧、`spec.ts` が名前とバージョン、`metrics.ts` がメトリクスの値、`fontface.ts` がプレビュー用の FontFace の登録
     - `archive/`：zip の保存・読み込み（仕様 7 章）。`schema.ts` が zod のスキーマ・`formatVersion`・マイグレーション、`zipinfo.ts` が展開前の中央ディレクトリの読み取り（ファイル数・展開後のサイズの上限）、`archive.ts` が組み立てと読み込み（想定外のパスは読まない、壊れたベクター JSON はその文字だけ飛ばす）
-    - `projects/`：プロジェクトの保存先（IndexedDB。保存先は差し替えられる）。プロジェクトごとのデータ（`myfontstudio:project:{uuid}`）と一覧（`myfontstudio:projects`）を 1 つのトランザクションで書く。読み込むときにスキーマで確かめる。前の版の自動保存の引き継ぎ、デバウンス、`?uuid=` の URL。`storage.ts` は永続化（`navigator.storage.persist()`）と使用量
+    - `projects/`：プロジェクトの保存先（IndexedDB。保存先は差し替えられる）。メタデータ（`myfontstudio:project:{uuid}`）と、文字ごとのグリフ（`…:glyph:{U+XXXX}`）・描いた履歴（`…:drawing:{U+XXXX}`）を分け、前回保存した内容と比べて変わった文字だけを書く（`features/projects.ts` が `lastSaved` で覚えておく）。一覧（`myfontstudio:projects`）と一緒に 1 つのトランザクションで書く。読み込むときにスキーマで確かめる。前の版の自動保存の引き継ぎ、デバウンス、`?uuid=` の URL。`storage.ts` は永続化（`navigator.storage.persist()`）と使用量
     - `testing/fixtures.ts`：テスト用の固定のストローク（「口」「十」「。」「A」）
   - `src/workers/`：重い処理の本体（`tasks.ts`：フォントの生成・zip の保存と読み込み。React・DOM に依存させない）と Web Worker（`font.worker.ts`）。Worker は esbuild で `public/workers/font.worker.js` にバンドルする（`npm run build:worker`。`build`・`dev` の前に自動で実行。Next.js の Turbopack は `new Worker(new URL(...))` の TypeScript をバンドルしないため）。URL には `NEXT_PUBLIC_BASE_PATH`（`next.config.ts` で `BASE_PATH` から入れる）を付ける
   - `src/features/`：ストアと lib をつなぐ処理（`fontPreview.ts`：グリフが変わったら 300ms 待ってプレビュー用の .ttf を作り直す、`actions.ts`：フォントのダウンロード、`glyphActions.ts`：描きかけの保存、`archiveActions.ts`・`zipDrop.ts`・`png.ts`：zip の保存・読み込み・ドラッグ＆ドロップ・プレビュー PNG、`worker.ts`：Web Worker で処理を動かす（`runInWorker`。`label` を渡すと進み具合と「取り消す」を出す。取り消すと Worker を止めて作り直す。Worker が使えなければ画面のスレッドで動かす）、`unsavedWarning.ts`：描きかけのストローク・終わっていない保存があるときの beforeunload の警告、`projects.ts`：開いているプロジェクトの保存（文字の追加などはすぐ、文章などは 500ms 待つ。書き込みは 1 本の列で順に行う）、URL の `?uuid=` からの読み込み（`useProjectFromUrl`。入力・プレビューは `ProjectGate` と Suspense で囲む）、一覧・削除、zip を新しいプロジェクトとして開く）
@@ -19,7 +19,8 @@
   - `src/types/project.ts`：プロジェクト・グリフの型（zip の JSON と同じ形）
   - `src/views/`・`src/components/`：画面（`src/pages/` は Next.js の Pages Router と衝突するので使わない）。入力・プレビューと、ストアを使う部品はクライアントコンポーネント（`"use client"`）。共通の外枠は `AppShell`。`DrawingCanvas` は 2 枚の Canvas（下：ガイド・お手本・確定したストローク、上：描いている途中）で、各ストロークの輪郭を nonzero で塗る
 - `Dockerfile`・`nginx/default.conf.template`・`render.yaml`：Node.js で静的エクスポート → 非 root の Nginx で配信（`/editor` と `/editor/` → `editor/index.html`、ないページは `404.html`、セキュリティヘッダー・CSP・`/healthz`）。Render 用
-  - CSP の `script-src` は、Next.js が HTML に埋め込むインラインのスクリプトの SHA-256（ビルド時に `frontend/scripts/csp-hashes.mjs` が集めて `/etc/nginx/csp.conf` に書く）。`'unsafe-inline'` にしない
+  - CSP の `script-src` は、Next.js が HTML に埋め込むインラインのスクリプトの SHA-256（ビルド時に `frontend/scripts/csp-hashes.mjs` が集めて `/etc/nginx/csp.conf` に書く）。`'unsafe-inline'` にしない。CSP の中身は `frontend/scripts/csp.mjs` に 1 つだけ書く（Nginx の `set $csp` の行と合わせる）
+  - GitHub Pages はヘッダーを付けられないので、`pages.yml` が `scripts/csp-meta.mjs` で HTML に CSP の `<meta>` を入れる
 - `e2e/`：動いているサーバー（コンテナ）に対する Playwright のテスト。応答とヘッダー（`server.spec.ts`）、ブラウザでの操作（`ui.spec.ts`・`editor.spec.ts`・`preview.spec.ts`・`archive.spec.ts`・`projects.spec.ts`・`guide.spec.ts`。`fixtures.ts` は beforeunload のダイアログを受け入れて数える。Canvas にはマウスで描く：`drawing.ts`）。`fixtures.ts` の `test` を使うと、コンソールのエラー（CSP の違反など）があれば失敗する
 - `docs/demo.gif`：README のデモの GIF。録画は 800px・5fps・64 色の 2 パスの GIF にする（`ffmpeg -i demo.mov -vf "fps=5,scale=800:-1:flags=lanczos,palettegen=max_colors=64" palette.png` → `ffmpeg -i demo.mov -i palette.png -lavfi "fps=5,scale=800:-1:flags=lanczos[x];[x][1:v]paletteuse" docs/demo.gif`）。元の録画はリポジトリに入れない（`.gitignore` の `*.mov`）
 - `docs/SPEC.md`：仕様書。仕様を変えたら、本文と「12. 仕様の修正履歴」を直す
@@ -104,7 +105,7 @@ docker rm -f app
 | Render | `main` への push のうち、`frontend/`・`nginx/`・`Dockerfile`・`.dockerignore` が変わったとき（Render 側の自動デプロイ、`render.yaml` の `buildFilter`） | `render.yaml` の設定で Docker イメージをビルドして動かす |
 | GitHub Pages（https://osawa-koki.github.io/MyFontStudio/ ） | `main` への push のうち、`frontend/`・`pages.yml` が変わったとき、手動（`pages.yml`） | `BASE_PATH=/MyFontStudio`（Next.js の `basePath`）でビルドし、`frontend/out` をデプロイする |
 
-- GitHub Pages では HTTP ヘッダー（CSP など）を付けられない。セキュリティヘッダーは Nginx（Render）でだけ付く。
+- GitHub Pages では HTTP ヘッダーを付けられない。CSP だけは `<meta>` で入れる（HSTS などのほかのヘッダーは Nginx（Render）でだけ付く）。
 - イメージに入るものを変えた PR のマージ後は、`publish.yml` の結果も確認する（`gh run list --workflow publish.yml --branch main --limit 1` → `gh run watch <run-id> --exit-status`）。
 - 画面を変えた PR のマージ後は、`pages.yml` の結果を確認する（`gh run list --workflow pages.yml --branch main --limit 1` → `gh run watch <run-id> --exit-status`）。
 

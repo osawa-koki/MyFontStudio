@@ -2,22 +2,40 @@
 import { z } from "zod";
 import type { Project } from "../../types/project";
 import { drawingSchema, penParamsSchema, vectorSchema } from "../archive/schema";
-import { DEFAULT_FAMILY_NAME, sanitizeDisplayName, sanitizeFamilyName } from "../project/project";
+import {
+  DEFAULT_FAMILY_NAME,
+  sanitizeDisplayName,
+  sanitizeFamilyName,
+  toCodepointLabel,
+} from "../project/project";
 
 /** 保存先（IndexedDB。テストでは差し替える） */
 export interface KeyValueStore {
   get(key: string): Promise<unknown>;
+  getMany(keys: string[]): Promise<unknown[]>;
   set(key: string, value: unknown): Promise<void>;
   /** まとめて書く（IndexedDB では 1 つのトランザクションになり、途中で閉じても一部だけ書かれることがない） */
   setMany(entries: [string, unknown][]): Promise<void>;
   del(key: string): Promise<void>;
+  delMany(keys: string[]): Promise<void>;
 }
 
 export const INDEX_KEY = "myfontstudio:projects";
+/** プロジェクトの設定・文字一覧・文章と、グリフ・描いた履歴のある文字の一覧（メタデータ） */
 export const projectKey = (id: string) => `myfontstudio:project:${id}`;
+/** 文字ごとのグリフと描いた履歴は別のキーにし、変わった文字だけを書く */
+export const glyphKey = (id: string, char: string) =>
+  `myfontstudio:project:${id}:glyph:${toCodepointLabel(char)}`;
+export const drawingKey = (id: string, char: string) =>
+  `myfontstudio:project:${id}:drawing:${toCodepointLabel(char)}`;
 /** 前の版（プロジェクトが 1 つだけ）の自動保存のキー */
 export const LEGACY_AUTOSAVE_KEY = "myfontstudio:autosave";
-export const STORED_VERSION = 1;
+/**
+ * 保存の形式
+ * - 1：プロジェクト全体（グリフ・描いた履歴を含む）を 1 つの値に保存していた
+ * - 2：メタデータと、文字ごとのグリフ・描いた履歴を別のキーに分ける（1 本描くたびに全体を書かないように）
+ */
+export const STORED_VERSION = 2;
 /** ストアが変わってから保存するまでの待ち時間 */
 export const SAVE_DELAY_MS = 500;
 
@@ -59,11 +77,22 @@ const projectSchema = z.object({
   drawings: z.record(z.string(), z.unknown()).default({}),
 });
 
-const storedSchema = z.object({
-  version: z.literal(STORED_VERSION),
+/** 形式 1（全体を 1 つの値に保存していた） */
+const storedV1Schema = z.object({
+  version: z.literal(1),
   savedAt: z.string(),
   dirty: z.boolean(),
   project: projectSchema,
+});
+
+/** 形式 2 のメタデータ */
+const metaSchema = z.object({
+  version: z.literal(2),
+  savedAt: z.string(),
+  dirty: z.boolean(),
+  project: projectSchema.omit({ glyphs: true, drawings: true }),
+  glyphChars: z.array(z.string()),
+  drawingChars: z.array(z.string()),
 });
 
 const summarySchema = z.object({
@@ -129,40 +158,107 @@ export async function listProjects(kv: KeyValueStore): Promise<ProjectSummary[]>
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
+/** 文字の一覧のうち、キーに使える 1 文字のものだけ */
+const singleChars = (chars: readonly string[]) => chars.filter((c) => Array.from(c).length === 1);
+
 export async function loadProject(kv: KeyValueStore, id: string): Promise<StoredProject | null> {
   if (!isProjectId(id)) return null;
-  let raw: unknown;
   try {
-    raw = await kv.get(projectKey(id));
+    const raw = await kv.get(projectKey(id));
+    const meta = metaSchema.safeParse(raw);
+    if (meta.success) {
+      const glyphChars = singleChars(meta.data.glyphChars);
+      const drawingChars = singleChars(meta.data.drawingChars);
+      const values = await kv.getMany([
+        ...glyphChars.map((c) => glyphKey(id, c)),
+        ...drawingChars.map((c) => drawingKey(id, c)),
+      ]);
+      const glyphs: Record<string, unknown> = {};
+      const drawings: Record<string, unknown> = {};
+      glyphChars.forEach((c, i) => (glyphs[c] = values[i]));
+      drawingChars.forEach((c, i) => (drawings[c] = values[glyphChars.length + i]));
+      return {
+        project: sanitizeProject({ ...meta.data.project, glyphs, drawings }),
+        dirty: meta.data.dirty,
+      };
+    }
+    // 形式 1：読んだら形式 2 に書き直す
+    const v1 = storedV1Schema.safeParse(raw);
+    if (!v1.success) return null;
+    const loaded = { project: sanitizeProject(v1.data.project), dirty: v1.data.dirty };
+    await saveProject(kv, id, loaded.project, loaded.dirty, new Date(v1.data.savedAt));
+    return loaded;
   } catch {
     return null;
   }
-  const parsed = storedSchema.safeParse(raw);
-  if (!parsed.success) return null;
-  return { project: sanitizeProject(parsed.data.project), dirty: parsed.data.dirty };
 }
 
-/** プロジェクトを保存し、一覧を更新する（データと一覧は 1 つのトランザクションで書く） */
+/**
+ * プロジェクトを保存し、一覧を更新する（書く値はすべて 1 つのトランザクションで書く）。
+ * previous（前回保存した内容）を渡すと、変わった文字のグリフ・描いた履歴だけを書き、なくなった文字の値は消す
+ */
 export async function saveProject(
   kv: KeyValueStore,
   id: string,
   project: Project,
   dirty: boolean,
   now: Date = new Date(),
+  previous?: Project,
 ): Promise<void> {
   if (!isProjectId(id)) throw new Error("プロジェクトの ID が正しくない");
-  const list = (await listProjects(kv)).filter((s) => s.id !== id);
-  await kv.setMany([
-    [projectKey(id), { version: STORED_VERSION, savedAt: now.toISOString(), dirty, project }],
-    [INDEX_KEY, [summarize(id, project, now), ...list]],
+  const glyphChars = Object.keys(project.glyphs).filter((c) => Array.from(c).length === 1);
+  const drawingChars = Object.keys(project.drawings).filter((c) => Array.from(c).length === 1);
+  const entries: [string, unknown][] = [];
+  for (const c of glyphChars) {
+    if (project.glyphs[c] !== previous?.glyphs[c])
+      entries.push([glyphKey(id, c), project.glyphs[c]]);
+  }
+  for (const c of drawingChars) {
+    if (project.drawings[c] !== previous?.drawings[c])
+      entries.push([drawingKey(id, c), project.drawings[c]]);
+  }
+  const { glyphs: _g, drawings: _d, ...rest } = project;
+  void _g;
+  void _d;
+  entries.push([
+    projectKey(id),
+    {
+      version: STORED_VERSION,
+      savedAt: now.toISOString(),
+      dirty,
+      project: rest,
+      glyphChars,
+      drawingChars,
+    },
   ]);
+  const list = (await listProjects(kv)).filter((s) => s.id !== id);
+  entries.push([INDEX_KEY, [summarize(id, project, now), ...list]]);
+  await kv.setMany(entries);
+  if (previous) {
+    const removed = [
+      ...Object.keys(previous.glyphs)
+        .filter((c) => !(c in project.glyphs))
+        .map((c) => glyphKey(id, c)),
+      ...Object.keys(previous.drawings)
+        .filter((c) => !(c in project.drawings))
+        .map((c) => drawingKey(id, c)),
+    ];
+    if (removed.length > 0) await kv.delMany(removed);
+  }
 }
 
 /** プロジェクトを消す。先に一覧から外す（途中で閉じても、一覧に消えたプロジェクトが残らないように） */
 export async function deleteProject(kv: KeyValueStore, id: string): Promise<void> {
   const list = (await listProjects(kv)).filter((s) => s.id !== id);
   await kv.set(INDEX_KEY, list);
-  await kv.del(projectKey(id));
+  const meta = metaSchema.safeParse(await kv.get(projectKey(id)).catch(() => null));
+  const keys = meta.success
+    ? [
+        ...singleChars(meta.data.glyphChars).map((c) => glyphKey(id, c)),
+        ...singleChars(meta.data.drawingChars).map((c) => drawingKey(id, c)),
+      ]
+    : [];
+  await kv.delMany([...keys, projectKey(id)]);
 }
 
 /**
@@ -177,7 +273,7 @@ export async function migrateLegacyAutosave(kv: KeyValueStore): Promise<string |
     return null;
   }
   if (raw === undefined) return null;
-  const parsed = storedSchema.safeParse(raw);
+  const parsed = storedV1Schema.safeParse(raw);
   let id: string | null = null;
   if (parsed.success && hasContent(parsed.data.project as Project)) {
     id = createProjectId();

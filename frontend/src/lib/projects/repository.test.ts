@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createEmptyProject } from "../project/project";
-import { KUCHI } from "../testing/fixtures";
+import { addStroke, createHistory } from "../stroke/history";
+import { KUCHI, dot } from "../testing/fixtures";
 import {
   INDEX_KEY,
   LEGACY_AUTOSAVE_KEY,
@@ -15,6 +16,8 @@ import {
   projectHref,
   projectKey,
   saveProject,
+  glyphKey,
+  drawingKey,
   type KeyValueStore,
 } from "./repository";
 
@@ -23,6 +26,8 @@ function memoryStore(): KeyValueStore & { data: Map<string, unknown> } {
   return {
     data,
     get: async (k) => structuredClone(data.get(k)),
+    getMany: async (keys) => keys.map((k) => structuredClone(data.get(k))),
+    delMany: async (keys) => keys.forEach((k) => data.delete(k)),
     set: async (k, v) => void data.set(k, structuredClone(v)),
     setMany: async (entries) => entries.forEach(([k, v]) => data.set(k, structuredClone(v))),
     del: async (k) => void data.delete(k),
@@ -114,19 +119,74 @@ describe("saveProject / loadProject / listProjects / deleteProject", () => {
   });
 });
 
-describe("描いた履歴", () => {
-  it("プロジェクトと一緒に保存し、壊れた履歴は捨てる。前の版のデータ（履歴なし）も読める", async () => {
+describe("文字ごとのキー（形式 2）", () => {
+  it("描いた履歴をプロジェクトと一緒に保存し、壊れた値は捨てる", async () => {
     const kv = memoryStore();
     const p = sample();
     p.drawings = { 口: { ops: [{ type: "clear" }], position: 1 } };
     await saveProject(kv, ID_A, p, false);
-    expect((await loadProject(kv, ID_A))!.project.drawings).toEqual(p.drawings);
+    expect(kv.data.has(drawingKey(ID_A, "口"))).toBe(true);
+    expect(kv.data.has(glyphKey(ID_A, "口"))).toBe(true);
+    expect((await loadProject(kv, ID_A))!.project).toEqual(p);
+    // 壊れた履歴・グリフは捨てる
+    kv.data.set(drawingKey(ID_A, "口"), { ops: [], position: 5 });
+    kv.data.set(glyphKey(ID_A, "口"), { char: "x" });
+    const loaded = (await loadProject(kv, ID_A))!.project;
+    expect(loaded.drawings).toEqual({});
+    expect(loaded.glyphs).toEqual({});
+  });
 
-    const stored = kv.data.get(projectKey(ID_A)) as { project: Record<string, unknown> };
-    stored.project.drawings = { 口: { ops: [], position: 5 }, ab: { ops: [], position: 0 } };
-    expect((await loadProject(kv, ID_A))!.project.drawings).toEqual({});
-    delete stored.project.drawings;
-    expect((await loadProject(kv, ID_A))!.project.drawings).toEqual({});
+  it("前回保存した内容を渡すと、変わった文字だけを書き、なくなった文字の値は消す", async () => {
+    const kv = memoryStore();
+    const p1 = sample();
+    p1.glyphs = { 口: KUCHI, 十: { ...KUCHI, char: "十", codepoint: "U+5341" } };
+    p1.drawings = { 口: createHistory(KUCHI.strokes), 十: createHistory() };
+    await saveProject(kv, ID_A, p1, false);
+    const written: string[] = [];
+    const spy: typeof kv = {
+      ...kv,
+      setMany: async (e) => {
+        written.push(...e.map(([k]) => k));
+        await kv.setMany(e);
+      },
+    };
+    // 「口」の履歴だけを変え、「十」を消す
+    const p2 = {
+      ...p1,
+      drawings: { 口: addStroke(p1.drawings["口"]!, dot(1, 1)) },
+      glyphs: { 口: KUCHI },
+    };
+    await saveProject(spy, ID_A, p2, true, new Date(), p1);
+    expect(written).toEqual([drawingKey(ID_A, "口"), projectKey(ID_A), INDEX_KEY]);
+    expect(kv.data.has(glyphKey(ID_A, "十"))).toBe(false);
+    expect(kv.data.has(drawingKey(ID_A, "十"))).toBe(false);
+    expect(await loadProject(kv, ID_A)).toEqual({ project: p2, dirty: true });
+  });
+
+  it("形式 1（全体を 1 つの値）は読み込めて、形式 2 に書き直す。履歴のない古いデータも読める", async () => {
+    const kv = memoryStore();
+    const p = sample();
+    const { drawings: _d, ...withoutDrawings } = p;
+    void _d;
+    kv.data.set(projectKey(ID_A), {
+      version: 1,
+      savedAt: "2026-11-01T00:00:00.000Z",
+      dirty: true,
+      project: withoutDrawings,
+    });
+    expect(await loadProject(kv, ID_A)).toEqual({ project: p, dirty: true });
+    expect((kv.data.get(projectKey(ID_A)) as { version: number }).version).toBe(2);
+    expect(kv.data.has(glyphKey(ID_A, "口"))).toBe(true);
+    expect((await listProjects(kv)).map((s) => s.id)).toEqual([ID_A]);
+  });
+
+  it("削除すると文字ごとの値も消える", async () => {
+    const kv = memoryStore();
+    const p = sample();
+    p.drawings = { 口: createHistory(KUCHI.strokes) };
+    await saveProject(kv, ID_A, p, false);
+    await deleteProject(kv, ID_A);
+    expect([...kv.data.keys()]).toEqual([INDEX_KEY]);
   });
 });
 

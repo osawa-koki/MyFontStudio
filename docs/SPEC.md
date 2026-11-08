@@ -103,7 +103,7 @@ frontend/src/
 
 開いているプロジェクトはzustandストアで保持し、画面遷移しても失われないようにする。
 
-- **保存**：プロジェクトごとにIndexedDBへ保存する（キー `myfontstudio:project:{uuid}`）。一覧（フォント名・文字数・更新日時の要約）は `myfontstudio:projects` に持ち、データと一覧は1つのトランザクションで書く。文字の追加・グリフの保存・設定の変更はすぐに、プレビューの文章など頻繁に変わるものは500ms待ってまとめて保存する。文字が1つもない新しいプロジェクトは、「新しくはじめる」で作ったもの以外は保存しない
+- **保存**：プロジェクトごとにIndexedDBへ保存する。設定・文字一覧・文章とグリフ・描いた履歴のある文字の一覧は `myfontstudio:project:{uuid}`、グリフは `…:glyph:{U+XXXX}`、描いた履歴は `…:drawing:{U+XXXX}` と文字ごとに分け、変わった文字だけを書く（1本描くたびにプロジェクト全体を書かないように）。一覧（フォント名・文字数・更新日時の要約）は `myfontstudio:projects` に持ち、書く値と一覧は1つのトランザクションで書く。前の形式（全体を1つの値に保存していたもの）は、読み込んだときに今の形式に書き直す。描いた履歴は1文字5,000操作を超えたら、古い操作をその時点の線にまとめて4,000操作に減らす。文字の追加・グリフの保存・設定の変更はすぐに、プレビューの文章など頻繁に変わるものは500ms待ってまとめて保存する。文字が1つもない新しいプロジェクトは、「新しくはじめる」で作ったもの以外は保存しない
 - **開き方**：入力ページと適用画面は `?uuid=xxx` のプロジェクトを開く。uuidがなければ、開いているプロジェクト（なければ新しいプロジェクト）のuuidをURLに付ける。保存していないuuid（文字を追加する前に再読み込みした場合など）は、そのuuidで新しく始める。uuidの形（小文字のUUID）が正しくなければ「プロジェクトを開けません」と表示する
 - **一覧**：使い方ページに、このブラウザのプロジェクトを新しく更新した順に並べ、開く・削除ができる
 - **永続化**：ブラウザは空き容量が足りなくなるとサイトのデータを自動で消すことがあるので、初めてプロジェクトを保存するときに `navigator.storage.persist()` で永続化を頼む（許可するかはブラウザが決める）。使い方ページに、永続化されているか・使用量（`navigator.storage.estimate()`）を表示し、永続化されていなければ「データを消されないようにする」ボタンで頼み直せる。閲覧データの削除では永続化していても消えるので、zipでの保存も案内する
@@ -488,7 +488,7 @@ textareaに入力した文章を、生成中のフォントでその下に表示
 | GitHub Container Registry | `main` へのpushで `publish.yml` がイメージをビルドして `ghcr.io/osawa-koki/myfontstudio`（タグ `main`・`sha-<コミット>`）にプッシュし、Trivyで脆弱性を調べる | ルートで配信 |
 | Render | ルートの `Dockerfile`（Node.jsで静的エクスポート → 非rootのNginxで配信。`PORT` で待ち受け）。`render.yaml` のBlueprint | ルートで配信。ないページは `404.html` |
 
-Nginxでは、CSP（`default-src 'self'` を基本とし、外部への通信を禁止）などのセキュリティヘッダーを付け、ヘルスチェック用に `/healthz` を返す。Next.jsの静的エクスポートはHTMLにインラインのスクリプトを埋め込むので、ビルド時にそのSHA-256を集めて `script-src` に入れる（`'unsafe-inline'` は使わない）。
+Nginxでは、CSP（`default-src 'self'` を基本とし、外部への通信を禁止）・HSTS・`Cross-Origin-Resource-Policy` などのセキュリティヘッダーを付け、ヘルスチェック用に `/healthz` を返す。Next.jsの静的エクスポートはHTMLにインラインのスクリプトを埋め込むので、ビルド時にそのSHA-256を集めて `script-src` に入れる（`'unsafe-inline'` は使わない）。GitHub PagesはHTTPヘッダーを付けられないので、ビルドしたHTMLの `<head>` の先頭に同じCSPの `<meta http-equiv="Content-Security-Policy">` を入れる（`frame-ancestors` は `<meta>` では効かない）。
 
 ### 10.3 代替案：サーバーサイド生成
 
@@ -553,6 +553,7 @@ Nginxでは、CSP（`default-src 'self'` を基本とし、外部への通信を
 | 2026-11-08 | 2・10.4 | 配信（GitHub PagesとDocker / Nginx / Render）とルーターの切り替えを追加。コードは `frontend/` に置く |
 | 2026-11-08 | 11 | Wordでの確認は実機での手動確認とし、fontTools・OTSでの検証を追加 |
 | 2026-11-08 | 2・3・10.4 | フロントエンドをVite + react-routerのSPAから、Next.js（App Router）の静的エクスポートに変更。ページごとのHTMLを事前に作る。GitHub PagesのHashRouterをやめ `basePath` にする。CSPはインラインのスクリプトのハッシュで許可する |
+| 2026-11-08 | 10.4 | NginxにHSTS・Cross-Origin-Resource-Policyを足し、GitHub PagesはHTMLにCSPの `<meta>` を入れる |
 | 2026-11-08 | 10.4 | mainへのマージでDockerイメージをGitHub Container Registryにプッシュする |
 | 2026-11-08 | 4.4・7 | 描いた履歴を文字ごとにプロジェクトに保存し、zipにも入れる（formatVersion 2、`rawdata/history/`）。描きかけの線も保存されるので、文字の移動に「そのまま移動」を足し、プロジェクトの切り替え・タブを閉じるときに描きかけでは確かめない |
 | 2026-11-08 | 3 | ブラウザに保存したデータの永続化（`navigator.storage.persist()`）と、保存の状態・使用量の表示 |
