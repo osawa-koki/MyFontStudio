@@ -1,5 +1,7 @@
 // sfnt（TrueType / OpenType）のバイナリを読み書きする最小限の処理。
 // ライブラリで書き出したフォントのテーブルを差し替え・書き換えて、両形式で名前・メトリクス・OS/2 の値をそろえる（仕様 6.4）
+import { contoursBounds } from "../glyph/width";
+import { setCffFontBBox } from "./cff";
 import type { FontGlyph } from "./glyphs";
 import {
   CAP_HEIGHT,
@@ -311,6 +313,52 @@ function setLongDateTime(v: DataView, offset: number, date: Date): void {
   v.setUint32(offset + 4, seconds >>> 0);
 }
 
+/** 輪郭のあるグリフから計算した、フォント全体の範囲と hhea の値 */
+export function fontExtents(glyphs: readonly FontGlyph[]) {
+  let xMin = Infinity;
+  let yMin = Infinity;
+  let xMax = -Infinity;
+  let yMax = -Infinity;
+  let minLeftSideBearing = Infinity;
+  let minRightSideBearing = Infinity;
+  let xMaxExtent = -Infinity;
+  let advanceWidthMax = 0;
+  for (const g of glyphs) {
+    advanceWidthMax = Math.max(advanceWidthMax, g.advanceWidth);
+    const b = contoursBounds(g.contours);
+    if (!b) continue;
+    xMin = Math.min(xMin, b.xMin);
+    yMin = Math.min(yMin, b.yMin);
+    xMax = Math.max(xMax, b.xMax);
+    yMax = Math.max(yMax, b.yMax);
+    minLeftSideBearing = Math.min(minLeftSideBearing, b.xMin);
+    minRightSideBearing = Math.min(minRightSideBearing, g.advanceWidth - b.xMax);
+    xMaxExtent = Math.max(xMaxExtent, b.xMax);
+  }
+  if (xMin === Infinity) {
+    return {
+      xMin: 0,
+      yMin: 0,
+      xMax: 0,
+      yMax: 0,
+      minLeftSideBearing: 0,
+      minRightSideBearing: 0,
+      xMaxExtent: 0,
+      advanceWidthMax,
+    };
+  }
+  return {
+    xMin,
+    yMin,
+    xMax,
+    yMax,
+    minLeftSideBearing,
+    minRightSideBearing,
+    xMaxExtent,
+    advanceWidthMax,
+  };
+}
+
 /**
  * ライブラリで書き出したフォントを仕上げる：name・OS/2 を差し替え、head・hhea・maxp・post の値を書き換える
  */
@@ -331,6 +379,12 @@ export function finalizeFont(
   setLongDateTime(hv, 20, spec.createdAt); // created
   setLongDateTime(hv, 28, spec.createdAt); // modified
   hv.setUint16(44, 0); // macStyle
+  // 範囲はライブラリに任せず、輪郭から計算した値にする（opentype.js は .notdef を除き、スペースの 0 を含めて計算する）
+  const ext = fontExtents(glyphs);
+  hv.setInt16(36, ext.xMin);
+  hv.setInt16(38, ext.yMin);
+  hv.setInt16(40, ext.xMax);
+  hv.setInt16(42, ext.yMax);
 
   const hhea = t.get("hhea");
   if (!hhea) throw new Error("hhea テーブルがない");
@@ -338,6 +392,14 @@ export function finalizeFont(
   hh.setInt16(4, HHEA_ASCENDER);
   hh.setInt16(6, HHEA_DESCENDER);
   hh.setInt16(8, HHEA_LINE_GAP);
+  hh.setUint16(10, ext.advanceWidthMax);
+  hh.setInt16(12, ext.minLeftSideBearing);
+  hh.setInt16(14, ext.minRightSideBearing);
+  hh.setInt16(16, ext.xMaxExtent);
+
+  // .otf：CFF の FontBBox も同じ範囲にする
+  const cff = t.get("CFF ");
+  if (cff) t.set("CFF ", setCffFontBBox(cff, ext));
 
   // TrueType の maxp（version 1.0）：maxZones は 1 以上（fonteditor-core は 0 を書く）
   const maxp = t.get("maxp");
