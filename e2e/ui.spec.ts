@@ -4,13 +4,21 @@ import { expect, test } from "./fixtures";
 test("使い方ページから入力ページ・プレビューに移動できる", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-  await page.getByRole("navigation", { name: "ページ" }).getByRole("link", { name: "入力" }).click();
+  await page
+    .getByRole("navigation", { name: "ページ" })
+    .getByRole("link", { name: "入力" })
+    .click();
   await expect(page).toHaveURL(/\/editor$/);
-  await page.getByRole("navigation", { name: "ページ" }).getByRole("link", { name: "プレビュー" }).click();
+  await page
+    .getByRole("navigation", { name: "ページ" })
+    .getByRole("link", { name: "プレビュー" })
+    .click();
   await expect(page).toHaveURL(/\/preview$/);
 });
 
-test("Canvas にマウスで描き、元に戻す・やり直し・クリアができる", async ({ page }) => {
+test("Canvas にマウスで描き、元に戻す・やり直し・クリアができる", async ({
+  page,
+}) => {
   await page.goto("/editor");
   await page.getByLabel("追加する文字列").fill("あ");
   await page.getByLabel("追加する文字列").press("Enter");

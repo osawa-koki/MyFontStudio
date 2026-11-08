@@ -3,6 +3,7 @@ import { countGlyphs } from "../lib/project/project";
 import { useProjectStore } from "../store/projectStore";
 import { FontDownloadMenu } from "./FontDownloadMenu";
 import { FontSettingsButton } from "./FontSettingsButton";
+import { ZipButtons } from "./ZipButtons";
 
 const NAV = [
   { to: "/", label: "使い方", end: true },
@@ -53,6 +54,7 @@ export function Header() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <ZipButtons />
           <FontDownloadMenu />
         </div>
       </div>

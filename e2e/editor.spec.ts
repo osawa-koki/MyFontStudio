@@ -2,9 +2,13 @@ import { drawStroke } from "./drawing";
 import { expect, test } from "./fixtures";
 
 const chip = (page: import("@playwright/test").Page, c: string) =>
-  page.getByRole("region", { name: "文字一覧" }).getByRole("button", { name: new RegExp(`^${c}（`) });
+  page
+    .getByRole("region", { name: "文字一覧" })
+    .getByRole("button", { name: new RegExp(`^${c}（`) });
 
-test("「大澤太郎」を入力すると 4 文字が並び、描いて保存するたびに次の文字へ進む", async ({ page }) => {
+test("「大澤太郎」を入力すると 4 文字が並び、描いて保存するたびに次の文字へ進む", async ({
+  page,
+}) => {
   await page.goto("/editor");
   await page.getByLabel("追加する文字列").fill("大澤太郎");
   await page.getByLabel("追加する文字列").press("Enter");
@@ -22,7 +26,8 @@ test("「大澤太郎」を入力すると 4 文字が並び、描いて保存�
       [800, 500],
     ]);
     // 保存は Enter（テキスト入力の外）でもボタンでもよい
-    if (i % 2 === 1) await page.getByRole("button", { name: "保存" }).click();
+    if (i % 2 === 1)
+      await page.getByRole("button", { name: "保存", exact: true }).click();
     else {
       await page.getByTestId("drawing-canvas").focus();
       await page.keyboard.press("Enter");
@@ -34,26 +39,34 @@ test("「大澤太郎」を入力すると 4 文字が並び、描いて保存�
     [500, 200],
     [500, 800],
   ]);
-  await page.getByRole("button", { name: "保存" }).click();
+  await page.getByRole("button", { name: "保存", exact: true }).click();
   await expect(page.getByText("すべての文字を作成しました")).toBeVisible();
   await expect(chip(page, "郎")).toHaveAccessibleName(/作成済み/);
   // フォントができるとダウンロードできる
   const download = page.waitForEvent("download");
-  await page.getByRole("button", { name: "フォントをダウンロード（.ttf）" }).click();
+  await page
+    .getByRole("button", { name: "フォントをダウンロード（.ttf）" })
+    .click();
   expect((await download).suggestedFilename()).toBe("MyHandwriting.ttf");
 });
 
-test("未保存のストロークがあるときに移動すると確かめる。対応していない文字は通知する", async ({ page }) => {
+test("未保存のストロークがあるときに移動すると確かめる。対応していない文字は通知する", async ({
+  page,
+}) => {
   await page.goto("/editor");
   await page.getByLabel("追加する文字列").fill("あい😀");
   await page.getByRole("button", { name: "追加" }).click();
-  await expect(page.getByRole("status").filter({ hasText: "対応していない文字" })).toBeVisible();
+  await expect(
+    page.getByRole("status").filter({ hasText: "対応していない文字" }),
+  ).toBeVisible();
   await drawStroke(page, [
     [200, 500],
     [800, 500],
   ]);
   await chip(page, "い").click();
-  const dialog = page.getByRole("dialog", { name: "「あ」は保存されていません" });
+  const dialog = page.getByRole("dialog", {
+    name: "「あ」は保存されていません",
+  });
   await expect(dialog).toBeVisible();
   await dialog.getByRole("button", { name: "キャンセル" }).click();
   await expect(page.getByTestId("current-char")).toHaveText("あ");
@@ -65,13 +78,17 @@ test("未保存のストロークがあるときに移動すると確かめる�
   // 右クリックで削除（作成済みは確認）
   await chip(page, "あ").click({ button: "right" });
   await page.getByRole("dialog").getByRole("button", { name: "削除" }).click();
-  await expect(page.getByRole("region", { name: "文字一覧" }).getByRole("listitem")).toHaveCount(1);
+  await expect(
+    page.getByRole("region", { name: "文字一覧" }).getByRole("listitem"),
+  ).toHaveCount(1);
 });
 
 test("プリセットで文字群を追加でき、← → で移動できる", async ({ page }) => {
   await page.goto("/editor");
   await page.getByRole("button", { name: "数字" }).click();
-  await expect(page.getByRole("region", { name: "文字一覧" }).getByRole("listitem")).toHaveCount(10);
+  await expect(
+    page.getByRole("region", { name: "文字一覧" }).getByRole("listitem"),
+  ).toHaveCount(10);
   await expect(page.getByTestId("current-char")).toHaveText("0");
   await page.keyboard.press("ArrowRight");
   await expect(page.getByTestId("current-char")).toHaveText("1");
