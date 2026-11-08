@@ -77,8 +77,12 @@ describe("projectStore", () => {
     s().setDefaults({ usePressure: false });
     expect(s().project.defaults.usePressure).toBe(false);
     expect(s().project.defaults.showModel).toBe(true);
+    s().markSaved();
+    s().setPreviewText("大", { dirty: false });
+    expect(s().dirty).toBe(false);
     s().setPreviewText("大澤太郎");
     expect(s().project.previewText).toBe("大澤太郎");
+    expect(s().dirty).toBe(true);
   });
 
   it("incrementExportCount は 1 ずつ増やす", () => {
