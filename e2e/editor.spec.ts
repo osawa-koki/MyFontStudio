@@ -107,9 +107,50 @@ test("文字列入力欄は複数行で入力でき、Enter は改行、Ctrl/Cmd
   ).toHaveCount(7);
 });
 
+test("プリセットは、まだ一覧にない文字の数を示して確かめてから追加する", async ({
+  page,
+}) => {
+  await page.goto("/editor");
+  await page.getByLabel("追加する文字列").fill("0１2");
+  await page.getByLabel("追加する文字列").press("ControlOrMeta+Enter");
+  const list = page
+    .getByRole("region", { name: "文字一覧" })
+    .getByRole("listitem");
+  await expect(list).toHaveCount(3);
+  await page.getByRole("button", { name: "数字" }).click();
+  const dialog = page.getByRole("dialog", {
+    name: "数字を 8 文字追加しますか？",
+  });
+  await expect(dialog).toContainText(
+    "10 文字のうち、2 文字はすでに一覧にあります",
+  );
+  // キャンセルすると追加しない
+  await dialog.getByRole("button", { name: "キャンセル" }).click();
+  await expect(list).toHaveCount(3);
+  await page.getByRole("button", { name: "数字" }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "追加する" })
+    .click();
+  await expect(list).toHaveCount(11);
+  // すべて一覧にあれば、確かめずに知らせる
+  await page.getByRole("button", { name: "数字" }).click();
+  await expect(
+    page
+      .getByRole("status")
+      .filter({ hasText: "数字の 10 文字は、すべて一覧にあります" }),
+  ).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
 test("プリセットで文字群を追加でき、← → で移動できる", async ({ page }) => {
   await page.goto("/editor");
   await page.getByRole("button", { name: "数字" }).click();
+  const dialog = page.getByRole("dialog", {
+    name: "数字を 10 文字追加しますか？",
+  });
+  await expect(dialog).toContainText("0 1 2 3 4 5 6 7 8 9");
+  await dialog.getByRole("button", { name: "追加する" }).click();
   await expect(
     page.getByRole("region", { name: "文字一覧" }).getByRole("listitem"),
   ).toHaveCount(10);
