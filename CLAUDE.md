@@ -5,6 +5,9 @@
 - `frontend/`：Vite + React + TypeScript（strict）+ Tailwind CSS の画面（SPA）。コードはすべてここにある
   - `src/lib/`：ロジック（純粋な関数。React に依存させない。テストはここに書く）
     - `project/`：プロジェクトの初期値・名前の直し方・コードポイントの表記
+    - `stroke/`：ストロークの記録（丸め・間引き・em 座標への変換・筆圧の決め方）
+    - `glyph/`：ストローク → 輪郭 → `GlyphOutline`（仕様 5 章）。`outline.ts` が手順（perfect-freehand → polygon-clipping の union → Douglas–Peucker → 中点の二次ベジェ → フォント座標・向き）、`width.ts` が送り幅（East Asian Width）、`path.ts` が SVG の path、`constants.ts` がメトリクスなどの値
+    - `testing/fixtures.ts`：テスト用の固定のストローク（「口」「十」「。」「A」）
   - `src/store/`：zustand のストア（`projectStore`：プロジェクトの状態、`uiStore`：通知・確認ダイアログ）
   - `src/types/project.ts`：プロジェクト・グリフの型（zip の JSON と同じ形）
   - `src/pages/`・`src/components/`：画面
