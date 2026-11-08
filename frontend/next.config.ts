@@ -5,6 +5,8 @@ const nextConfig: NextConfig = {
   output: "export",
   // 配信するパス。GitHub Pages では /MyFontStudio（pages.yml で BASE_PATH を渡す）、Docker（Nginx）ではルート
   basePath: process.env.BASE_PATH || undefined,
+  // Web Worker（public/workers/）の URL に付ける。basePath は public のファイルの URL に自動では付かないため
+  env: { NEXT_PUBLIC_BASE_PATH: process.env.BASE_PATH || "" },
   // /editor/ → editor/index.html。false だと editor.html と editor/（RSC のデータ）が並び、
   // GitHub Pages が /editor をディレクトリとみなして 404 になる
   trailingSlash: true,

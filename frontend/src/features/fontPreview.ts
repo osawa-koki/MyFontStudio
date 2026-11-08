@@ -3,6 +3,7 @@ import { collectOutlinesAsync } from "../lib/font/outlines";
 import { registerPreviewFont, unregisterPreviewFont } from "../lib/font/fontface";
 import { useFontStore } from "../store/fontStore";
 import { useProjectStore } from "../store/projectStore";
+import { TaskCancelledError, runInWorker } from "./worker";
 
 /** グリフを保存・削除してから、フォントを作り直すまでの待ち時間 */
 export const REBUILD_DELAY_MS = 300;
@@ -23,9 +24,14 @@ export async function rebuildPreviewFont(): Promise<void> {
       set({ family: null, outlineCount: 0, chars: new Set(), error: null });
       return;
     }
-    // fonteditor-core・opentype.js は大きいので、使うときに読み込む（別のチャンクにする）
-    const { buildFont } = await import("../lib/font/build");
-    const buffer = buildFont("ttf", outlines, project.font)!;
+    // フォントの生成は Web Worker で行う（画面を止めない）
+    const buffer = await runInWorker({
+      kind: "buildFont",
+      format: "ttf",
+      outlines,
+      font: project.font,
+    });
+    if (!buffer || my !== generation) return;
     const family = await registerPreviewFont(buffer);
     // 待っている間に次の生成が始まっていたら、そちらに任せる
     if (my !== generation) return;
@@ -36,6 +42,11 @@ export async function rebuildPreviewFont(): Promise<void> {
       error: null,
     });
   } catch (e) {
+    // zip の保存などを取り消して Worker を止めたときは、この生成も止まるので、やり直す（新しい生成が始まっていなければ）
+    if (e instanceof TaskCancelledError) {
+      if (my === generation) window.setTimeout(() => void rebuildPreviewFont(), 0);
+      return;
+    }
     console.error("フォントの生成に失敗しました", e);
     if (my === generation) set({ error: e instanceof Error ? e.message : String(e) });
   }
