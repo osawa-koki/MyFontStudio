@@ -98,7 +98,7 @@ docker rm -f app
 
 | 先 | トリガー | 内容 |
 |---|---|---|
-| GHCR（`ghcr.io/osawa-koki/myfontstudio`） | `main` への push のうち、`frontend/`・`nginx/`・`Dockerfile`・`.dockerignore`・`publish.yml` が変わったとき、手動（`publish.yml`） | イメージをビルドしてプッシュ（タグ `main`・`sha-<コミット>`）し、Trivy で調べ（修正済みの CRITICAL があれば失敗）、直近の 5 つ以外のバージョンを消す。イメージ名は小文字（リポジトリ名は大文字を含むため、ワークフローで小文字にする） |
+| GHCR（`ghcr.io/osawa-koki/myfontstudio`） | `main` への push のうち、`frontend/`・`nginx/`・`Dockerfile`・`.dockerignore`・`publish.yml` が変わったとき、週 1 回（月曜 3:00 JST）、手動（`publish.yml`） | イメージをビルド（実行のステージはキャッシュなしで、`apk upgrade` で Alpine のセキュリティ更新を入れる）してプッシュ（タグ `main`・`sha-<コミット>`）し、Trivy で調べ（修正済みの CRITICAL があれば失敗）、直近の 5 つ以外のバージョンを消す。イメージ名は小文字（リポジトリ名は大文字を含むため、ワークフローで小文字にする） |
 | Render | `main` への push のうち、`frontend/`・`nginx/`・`Dockerfile`・`.dockerignore` が変わったとき（Render 側の自動デプロイ、`render.yaml` の `buildFilter`） | `render.yaml` の設定で Docker イメージをビルドして動かす |
 | GitHub Pages（https://osawa-koki.github.io/MyFontStudio/ ） | `main` への push のうち、`frontend/`・`pages.yml` が変わったとき、手動（`pages.yml`） | `BASE_PATH=/MyFontStudio`（Next.js の `basePath`）でビルドし、`frontend/out` をデプロイする |
 

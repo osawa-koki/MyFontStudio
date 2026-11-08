@@ -13,6 +13,9 @@ on:
       - "Dockerfile"
       - ".dockerignore"
       - ".github/workflows/publish.yml"
+  # コミットがなくても、Alpine のセキュリティ更新を入れるため、週 1 回作り直す（月曜 3:00 JST）
+  schedule:
+    - cron: "0 18 * * 0"
   workflow_dispatch:
 
 permissions:
@@ -74,7 +77,10 @@ jobs:
           # provenance などの添付を付けない（タグのないバージョンが増え、容量を使うため）
           provenance: false
           sbom: false
+          # ベースイメージを毎回取り直し、実行のステージ（apk upgrade）はキャッシュを使わずに作る。
+          # キャッシュを使うと、Alpine のセキュリティ更新が出ても古いパッケージのまま残るため
           pull: true
+          no-cache-filters: runtime
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Summary
