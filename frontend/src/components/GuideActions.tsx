@@ -1,32 +1,37 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { openZip } from "../features/archiveActions";
+import {
+  deleteStoredProject,
+  flushProjectSave,
+  listStoredProjects,
+  saveCurrentProjectNow,
+} from "../features/projects";
 import { DEFAULT_FAMILY_NAME, sanitizeFamilyName } from "../lib/project/project";
+import { projectHref, type ProjectSummary } from "../lib/projects/repository";
+import { useEditorStore } from "../store/editorStore";
 import { useProjectStore } from "../store/projectStore";
-import { askDialog, confirmDialog } from "../store/uiStore";
+import { askDialog, confirmDialog, notify } from "../store/uiStore";
 
-/** 使い方ページのボタン：新しくはじめる・zip を開いて続きから・作業を続ける */
+/** 使い方ページのボタン（新しくはじめる・zip を開く）と、プロジェクトの一覧（開く・削除） */
 export function GuideActions() {
   const router = useRouter();
-  const started = useProjectStore((s) => s.started);
-  const dirty = useProjectStore((s) => s.dirty);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
+  const currentId = useProjectStore((s) => s.projectId);
+
+  // 待っている保存が済んでから読む（listStoredProjects の中で待つ）
+  const refresh = useCallback(() => void listStoredProjects().then(setProjects), []);
+  useEffect(refresh, [refresh]);
 
   const start = async () => {
-    if (started && dirty) {
-      const ok = await confirmDialog(
-        "新しくはじめますか？",
-        "zip に保存していない変更があります。新しくはじめると、今の作業は失われます。",
-        "新しくはじめる",
-        "danger",
-      );
-      if (!ok) return;
-    }
     const { value, input } = await askDialog({
       title: "フォント名を決めてください",
-      message: "英数字だけで入力します（あとからヘッダーで変えられます）。",
+      message:
+        "英数字だけで入力します（あとからヘッダーで変えられます）。新しいプロジェクトとして作ります。",
       input: { label: "フォント名", value: DEFAULT_FAMILY_NAME, placeholder: DEFAULT_FAMILY_NAME },
       buttons: [
         { label: "キャンセル", value: "cancel" },
@@ -35,43 +40,104 @@ export function GuideActions() {
       cancelValue: "cancel",
     });
     if (value !== "ok") return;
-    useProjectStore.getState().newProject(sanitizeFamilyName(input) || DEFAULT_FAMILY_NAME);
-    router.push("/editor");
+    await flushProjectSave();
+    useEditorStore.getState().reset();
+    const id = useProjectStore
+      .getState()
+      .newProject(sanitizeFamilyName(input) || DEFAULT_FAMILY_NAME);
+    await saveCurrentProjectNow();
+    router.push(projectHref("/editor", id));
+  };
+
+  const remove = async (p: ProjectSummary) => {
+    const ok = await confirmDialog(
+      `「${p.familyNameJa || p.familyName}」を削除しますか？`,
+      "このブラウザに保存した手書きのデータが消えます。この操作は元に戻せません（zip に保存したファイルは消えません）。",
+      "削除",
+      "danger",
+    );
+    if (!ok) return;
+    await deleteStoredProject(p.id);
+    notify("プロジェクトを削除しました", "success");
+    refresh();
   };
 
   return (
-    <div className="flex flex-wrap gap-3">
-      {started && (
-        <button type="button" className="btn btn-primary" onClick={() => router.push("/editor")}>
-          作業を続ける
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-wrap gap-3">
+        <button type="button" className="btn btn-primary" onClick={() => void start()}>
+          新しくはじめる
         </button>
-      )}
-      <button
-        type="button"
-        className={started ? "btn" : "btn btn-primary"}
-        onClick={() => void start()}
-      >
-        新しくはじめる
-      </button>
-      <button type="button" className="btn" onClick={() => inputRef.current?.click()}>
-        zip を開いて続きから
-      </button>
-      <input
-        ref={inputRef}
-        type="file"
-        accept=".zip,application/zip"
-        className="hidden"
-        aria-label="続きから開く zip ファイルを選ぶ"
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          e.target.value = "";
-          if (file) {
-            void openZip(file).then((ok) => {
-              if (ok) router.push("/editor");
-            });
-          }
-        }}
-      />
+        <button type="button" className="btn" onClick={() => inputRef.current?.click()}>
+          zip を開いて続きから
+        </button>
+        <input
+          ref={inputRef}
+          type="file"
+          accept=".zip,application/zip"
+          className="hidden"
+          aria-label="続きから開く zip ファイルを選ぶ"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = "";
+            if (file) {
+              void openZip(file).then((id) => {
+                if (id) router.push(projectHref("/editor", id));
+              });
+            }
+          }}
+        />
+      </div>
+
+      <section aria-labelledby="projects-title" className="flex flex-col gap-2">
+        <h2 id="projects-title" className="text-lg font-bold">
+          このブラウザのプロジェクト
+        </h2>
+        {projects === null ? (
+          <p className="text-sm text-slate-500">読み込んでいます…</p>
+        ) : projects.length === 0 ? (
+          <p className="text-sm text-slate-500">
+            まだありません。「新しくはじめる」か「zip を開いて続きから」で作ってください。
+          </p>
+        ) : (
+          <ul className="grid gap-2 sm:grid-cols-2">
+            {projects.map((p) => (
+              <li
+                key={p.id}
+                className={`flex items-center gap-3 rounded-md border bg-white p-3 ${p.id === currentId ? "border-blue-400" : "border-slate-200"}`}
+              >
+                <Link
+                  href={projectHref("/editor", p.id)}
+                  className="flex min-w-0 flex-1 flex-col hover:underline"
+                  aria-label={`${p.familyNameJa || p.familyName} を開く`}
+                >
+                  <span className="truncate font-bold">
+                    {p.familyName}
+                    {p.familyNameJa && (
+                      <span className="ml-1 font-normal text-slate-500">（{p.familyNameJa}）</span>
+                    )}
+                    {p.id === currentId && (
+                      <span className="ml-2 text-xs text-blue-700">開いています</span>
+                    )}
+                  </span>
+                  <span className="text-xs text-slate-500">
+                    作成済み {p.glyphCount} / {p.charCount} 文字・更新{" "}
+                    {new Date(p.updatedAt).toLocaleString("ja-JP")}
+                  </span>
+                </Link>
+                <button
+                  type="button"
+                  className="btn"
+                  aria-label={`${p.familyNameJa || p.familyName} を削除`}
+                  onClick={() => void remove(p)}
+                >
+                  削除
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </div>
   );
 }

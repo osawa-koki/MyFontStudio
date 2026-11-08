@@ -64,15 +64,11 @@ test("zip で保存 → リロード → zip を開くで、一覧・ストロ�
   );
   expect(vector.strokes).toHaveLength(2);
 
-  // リロードして、自動保存からは復元せず、zip から復元する
+  // 使い方ページ（プロジェクトを開いていない状態）から、zip を新しいプロジェクトとして開く
   await page.goto("/");
-  await page
-    .getByRole("dialog", { name: "前回の作業を復元しますか？" })
-    .getByRole("button", { name: "復元しない" })
-    .click();
   await expect(page.getByLabel("登録済み文字数")).toHaveText("0 文字");
   await page.getByTestId("zip-input").setInputFiles(zipPath);
-  await expect(page).toHaveURL(/\/editor\/?$/);
+  await expect(page).toHaveURL(/\/editor\/\?uuid=[0-9a-f-]{36}$/);
   await expect(
     page.getByRole("region", { name: "文字一覧" }).getByRole("listitem"),
   ).toHaveCount(3);
@@ -101,15 +97,20 @@ test.describe("壊れた zip・無関係な zip を開いても落ちない", ()
   // エラーの通知は出すが、コンソールのエラーにはしない
   test("zip でないファイル", async ({ page }) => {
     await page.goto("/");
-    await page
-      .getByTestId("zip-input")
-      .setInputFiles({
-        name: "broken.zip",
-        mimeType: "application/zip",
-        buffer: Buffer.from("not a zip"),
-      });
+    await page.getByTestId("zip-input").setInputFiles({
+      name: "broken.zip",
+      mimeType: "application/zip",
+      buffer: Buffer.from("not a zip"),
+    });
     // Next.js のルートアナウンサーも role="alert" なので、文言で絞る
-    await expect(page.getByRole("alert").filter({ hasText: "「broken.zip」を開けませんでした：zip ファイルではありません" })).toBeVisible();
+    await expect(
+      page
+        .getByRole("alert")
+        .filter({
+          hasText:
+            "「broken.zip」を開けませんでした：zip ファイルではありません",
+        }),
+    ).toBeVisible();
     await expect(page).toHaveURL(/\/$/);
   });
   test("project.json のない zip", async ({ page }) => {
@@ -117,14 +118,16 @@ test.describe("壊れた zip・無関係な zip を開いても落ちない", ()
     zip.file("hello.txt", "hello");
     const buffer = Buffer.from(await zip.generateAsync({ type: "uint8array" }));
     await page.goto("/");
-    await page
-      .getByTestId("zip-input")
-      .setInputFiles({
-        name: "other.zip",
-        mimeType: "application/zip",
-        buffer,
-      });
+    await page.getByTestId("zip-input").setInputFiles({
+      name: "other.zip",
+      mimeType: "application/zip",
+      buffer,
+    });
     // Next.js のルートアナウンサーも role="alert" なので、文言で絞る
-    await expect(page.getByRole("alert").filter({ hasText: "このアプリで保存した zip ではありません" })).toBeVisible();
+    await expect(
+      page
+        .getByRole("alert")
+        .filter({ hasText: "このアプリで保存した zip ではありません" }),
+    ).toBeVisible();
   });
 });

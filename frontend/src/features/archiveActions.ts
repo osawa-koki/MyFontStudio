@@ -1,11 +1,12 @@
 import { ArchiveError, archiveFileName, buildArchive, readArchive } from "../lib/archive/archive";
 import { downloadBlob } from "../lib/download";
 import { collectOutlines } from "../lib/font/outlines";
-import { isoWithOffset, nextUncreated } from "../lib/project/chars";
+import { isoWithOffset } from "../lib/project/chars";
 import { isDirty } from "../lib/stroke/history";
 import { useEditorStore } from "../store/editorStore";
+import { openAsNewProject } from "./projects";
 import { useProjectStore } from "../store/projectStore";
-import { askDialog, confirmDialog, notify } from "../store/uiStore";
+import { askDialog, notify } from "../store/uiStore";
 import { commitDraft } from "./glyphActions";
 import { renderGlyphPng } from "./png";
 
@@ -70,27 +71,18 @@ export async function saveZip(): Promise<void> {
   }
 }
 
-/** zip を読み込んで復元する（仕様 7.5）。成功したら true（呼び出し側で入力ページに移動する） */
-export async function openZip(file: File): Promise<boolean> {
-  const store = useProjectStore.getState();
-  if ((store.dirty || unsavedChars().length > 0) && store.started) {
-    const ok = await confirmDialog(
-      "今の作業を置き換えますか？",
-      "zip に保存していない変更があります。読み込むと、今の作業は失われます。",
-      "読み込む",
-      "danger",
-    );
-    if (!ok) return false;
-  }
+/**
+ * zip を読み込んで、新しいプロジェクトとして開く（仕様 7.5。今開いているプロジェクトは上書きしない）。
+ * 成功したら新しいプロジェクトの ID（呼び出し側で入力ページに移動する）
+ */
+export async function openZip(file: File): Promise<string | null> {
   if (file.size > MAX_ZIP_BYTES) {
     notify("ファイルが大きすぎます（200MB まで）", "error");
-    return false;
+    return null;
   }
   try {
     const { project, skipped } = await readArchive(await file.arrayBuffer());
-    useEditorStore.getState().reset();
-    store.loadProject(project);
-    store.setCurrentChar(nextUncreated(project.queue, project.glyphs, null));
+    const id = await openAsNewProject(project);
     if (skipped.length > 0) {
       notify(
         `${skipped.length} 文字を読み込めませんでした`,
@@ -98,13 +90,13 @@ export async function openZip(file: File): Promise<boolean> {
         skipped.map((s) => `「${s.char}」：${s.reason}`),
       );
     } else {
-      notify(`「${file.name}」を読み込みました`, "success");
+      notify(`「${file.name}」を新しいプロジェクトとして読み込みました`, "success");
     }
-    return true;
+    return id;
   } catch (e) {
     const message = e instanceof ArchiveError ? e.message : "zip ファイルを読み込めませんでした";
     if (!(e instanceof ArchiveError)) console.error(e);
     notify(`「${file.name}」を開けませんでした：${message}`, "error");
-    return false;
+    return null;
   }
 }

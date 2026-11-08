@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { projectHref } from "../lib/projects/repository";
 import { openZip } from "./archiveActions";
 
 const hasFiles = (e: DragEvent) => e.dataTransfer?.types.includes("Files") ?? false;
@@ -18,8 +19,8 @@ export function useZipDrop(): void {
       e.preventDefault();
       const file = e.dataTransfer?.files[0];
       if (!file) return;
-      void openZip(file).then((ok) => {
-        if (ok) router.push("/editor");
+      void openZip(file).then((id) => {
+        if (id) router.push(projectHref("/editor", id));
       });
     };
     window.addEventListener("dragover", onDragOver);
