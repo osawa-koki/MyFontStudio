@@ -1,0 +1,56 @@
+import { NavLink } from "react-router";
+import { countGlyphs } from "../lib/project/project";
+import { useProjectStore } from "../store/projectStore";
+import { FontSettingsButton } from "./FontSettingsButton";
+
+const NAV = [
+  { to: "/", label: "使い方", end: true },
+  { to: "/editor", label: "入力", end: false },
+  { to: "/preview", label: "プレビュー", end: false },
+];
+
+export function Header() {
+  const glyphCount = useProjectStore((s) => countGlyphs(s.project));
+  const dirty = useProjectStore((s) => s.dirty);
+
+  return (
+    <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
+      <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2">
+        <div className="flex items-center gap-4">
+          <NavLink to="/" className="text-lg font-bold text-blue-900">
+            MyFontStudio
+          </NavLink>
+          <nav aria-label="ページ" className="flex gap-1">
+            {NAV.map((n) => (
+              <NavLink
+                key={n.to}
+                to={n.to}
+                end={n.end}
+                className={({ isActive }) =>
+                  `rounded-md px-2 py-1 text-sm ${isActive ? "bg-blue-100 font-bold text-blue-900" : "text-slate-600 hover:bg-slate-100"}`
+                }
+              >
+                {n.label}
+              </NavLink>
+            ))}
+          </nav>
+        </div>
+
+        <div className="flex flex-1 items-center justify-center gap-2 text-sm">
+          <FontSettingsButton />
+          <span className="text-slate-500" aria-label="登録済み文字数">
+            {glyphCount} 文字
+          </span>
+          {dirty && (
+            <span
+              className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800"
+              title="zip に保存していない変更があります"
+            >
+              未保存
+            </span>
+          )}
+        </div>
+      </div>
+    </header>
+  );
+}

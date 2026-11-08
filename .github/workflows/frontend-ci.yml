@@ -1,0 +1,49 @@
+name: frontend-ci
+
+on: [ pull_request ]
+
+permissions:
+  contents: read
+
+# 同じ PR で新しく push されたら、古い実行は止める
+concurrency:
+  group: frontend-ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: ./frontend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: frontend/.node-version
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Type check
+        run: npm run typecheck
+      # ESLint と Prettier
+      - name: Lint
+        run: npm run lint
+      # 単体テスト。カバレッジの下限は vite.config.ts の coverage.thresholds
+      - name: Test with coverage
+        shell: bash
+        run: |
+          npm run test:coverage | tee coverage.txt
+          { echo '### frontend のカバレッジ'; echo '```'; sed -n '/Coverage summary/,$p' coverage.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      # Docker（Nginx）用と GitHub Pages 用の 2 通りでビルドできることを確かめる
+      - name: Build (BrowserRouter)
+        run: npm run build
+      - name: Build (HashRouter, GitHub Pages)
+        env:
+          VITE_ROUTER: hash
+          BASE_PATH: /${{ github.event.repository.name }}/
+        run: npm run build
