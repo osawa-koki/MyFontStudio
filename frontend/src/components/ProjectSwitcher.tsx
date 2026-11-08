@@ -3,7 +3,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { openZip } from "../features/archiveActions";
-import { confirmLeaveDrafts, createProjectInteractive } from "../features/projectActions";
+import { createProjectInteractive } from "../features/projectActions";
 import { listStoredProjects } from "../features/projects";
 import { projectHref, type ProjectSummary } from "../lib/projects/repository";
 import { useProjectStore } from "../store/projectStore";
@@ -56,7 +56,6 @@ export function ProjectSwitcher() {
   const switchTo = async (id: string) => {
     setOpen(false);
     if (id === projectId) return;
-    if (!(await confirmLeaveDrafts())) return;
     router.push(projectHref(target, id));
   };
 
@@ -186,7 +185,6 @@ export function ProjectSwitcher() {
           e.target.value = "";
           if (!file) return;
           void (async () => {
-            if (!(await confirmLeaveDrafts())) return;
             const id = await openZip(file);
             if (id) router.push(projectHref("/editor", id));
           })();

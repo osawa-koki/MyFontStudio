@@ -26,6 +26,7 @@ export function createEmptyProject(familyName: string = DEFAULT_FAMILY_NAME): Pr
     queue: [],
     previewText: "",
     glyphs: {},
+    drawings: {},
   };
 }
 

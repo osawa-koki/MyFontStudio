@@ -114,6 +114,22 @@ describe("saveProject / loadProject / listProjects / deleteProject", () => {
   });
 });
 
+describe("描いた履歴", () => {
+  it("プロジェクトと一緒に保存し、壊れた履歴は捨てる。前の版のデータ（履歴なし）も読める", async () => {
+    const kv = memoryStore();
+    const p = sample();
+    p.drawings = { 口: { ops: [{ type: "clear" }], position: 1 } };
+    await saveProject(kv, ID_A, p, false);
+    expect((await loadProject(kv, ID_A))!.project.drawings).toEqual(p.drawings);
+
+    const stored = kv.data.get(projectKey(ID_A)) as { project: Record<string, unknown> };
+    stored.project.drawings = { 口: { ops: [], position: 5 }, ab: { ops: [], position: 0 } };
+    expect((await loadProject(kv, ID_A))!.project.drawings).toEqual({});
+    delete stored.project.drawings;
+    expect((await loadProject(kv, ID_A))!.project.drawings).toEqual({});
+  });
+});
+
 describe("migrateLegacyAutosave", () => {
   it("前の版の自動保存を新しいプロジェクトとして引き継ぎ、元のデータを消す", async () => {
     const kv = memoryStore();

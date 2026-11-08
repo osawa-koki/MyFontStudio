@@ -55,6 +55,18 @@ export interface ProjectDefaults {
   showModel: boolean;
 }
 
+/** 描いた履歴の 1 つの操作：線を足す・すべて消す（クリア） */
+export type HistoryOp = { type: "add"; stroke: Stroke } | { type: "clear" };
+
+/**
+ * 1 文字分の描いた履歴（元に戻す/やり直しの履歴）。操作の記録と、どこまで適用しているか。
+ * ops[0..position) を順に適用したものが、今 Canvas にある線。position より後ろはやり直しできる操作
+ */
+export interface DrawingHistory {
+  ops: HistoryOp[];
+  position: number;
+}
+
 /** 1 つのフォントを作るための作業データ一式 */
 export interface Project {
   font: FontSettings;
@@ -64,4 +76,6 @@ export interface Project {
   previewText: string;
   /** 作成済みのグリフ。キーは文字 */
   glyphs: Record<string, GlyphData>;
+  /** 文字ごとの描いた履歴（グリフとして保存していない描きかけの線も含む）。キーは文字 */
+  drawings: Record<string, DrawingHistory>;
 }

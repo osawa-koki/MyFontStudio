@@ -148,11 +148,13 @@ test("ヘッダーのメニューから、新しいプロジェクトの作成�
   await expect(switcher).toHaveAccessibleName(/プロジェクト：Beta/);
   await addAndDraw(page, "乙丙");
 
-  // 描きかけがあると、切り替える前に確かめる
+  // 描きかけの線は描いた履歴として残るので、切り替えても消えない（確認も出ない）
   await drawStroke(page, [
     [300, 300],
     [700, 700],
   ]);
+  const canvas = page.getByTestId("drawing-canvas");
+  await expect(canvas).toHaveAttribute("aria-label", /ストローク 1 本/);
   await switcher.click();
   const menu = page.getByRole("menu", { name: "プロジェクト" });
   await expect(menu.getByRole("menuitemradio")).toHaveCount(2);
@@ -160,19 +162,23 @@ test("ヘッダーのメニューから、新しいプロジェクトの作成�
     menu.getByRole("menuitemradio", { name: /Beta/ }),
   ).toHaveAttribute("aria-checked", "true");
   await menu.getByRole("menuitemradio", { name: /Alpha/ }).click();
-  const confirm = page.getByRole("dialog", {
-    name: "描きかけの文字があります",
-  });
-  await confirm.getByRole("button", { name: "キャンセル" }).click();
-  await expect(switcher).toHaveAccessibleName(/プロジェクト：Beta/);
-  await switcher.click();
-  await menu.getByRole("menuitemradio", { name: /Alpha/ }).click();
-  await confirm.getByRole("button", { name: "切り替える" }).click();
   await expect(page).toHaveURL(new RegExp(`uuid=${alpha}$`));
   await expect(switcher).toHaveAccessibleName(/プロジェクト：Alpha/);
   await expect(
     page.getByRole("region", { name: "文字一覧" }).getByRole("listitem"),
   ).toHaveCount(1);
+  await switcher.click();
+  await menu.getByRole("menuitemradio", { name: /Beta/ }).click();
+  await expect(switcher).toHaveAccessibleName(/プロジェクト：Beta/);
+  await expect(canvas).toHaveAttribute(
+    "aria-label",
+    /「丙」の手書き入力欄（ストローク 1 本）/,
+  );
+  await page.getByRole("button", { name: "元に戻す" }).click();
+  await expect(canvas).toHaveAttribute("aria-label", /ストローク 0 本/);
+  await switcher.click();
+  await menu.getByRole("menuitemradio", { name: /Alpha/ }).click();
+  await expect(switcher).toHaveAccessibleName(/プロジェクト：Alpha/);
 
   // プレビューで切り替えると、プレビューのまま
   await page

@@ -1,7 +1,7 @@
 // プロジェクトの保存先（IndexedDB）。プロジェクトごとに UUID を振り、データと一覧を分けて保存する
 import { z } from "zod";
 import type { Project } from "../../types/project";
-import { penParamsSchema, vectorSchema } from "../archive/schema";
+import { drawingSchema, penParamsSchema, vectorSchema } from "../archive/schema";
 import { DEFAULT_FAMILY_NAME, sanitizeDisplayName, sanitizeFamilyName } from "../project/project";
 
 /** 保存先（IndexedDB。テストでは差し替える） */
@@ -55,6 +55,8 @@ const projectSchema = z.object({
   queue: z.array(z.string()),
   previewText: z.string(),
   glyphs: z.record(z.string(), z.unknown()),
+  // 前の版（描いた履歴を持たない）で保存したものにはない
+  drawings: z.record(z.string(), z.unknown()).default({}),
 });
 
 const storedSchema = z.object({
@@ -80,8 +82,14 @@ function sanitizeProject(p: z.infer<typeof projectSchema>): Project {
     const g = vectorSchema.safeParse(value);
     if (g.success && g.data.char === char) glyphs[char] = g.data;
   }
+  const drawings: Project["drawings"] = {};
+  for (const [char, value] of Object.entries(p.drawings)) {
+    const h = drawingSchema.safeParse(value);
+    if (h.success && Array.from(char).length === 1) drawings[char] = h.data;
+  }
   return {
     ...p,
+    drawings,
     font: {
       ...p.font,
       familyName: sanitizeFamilyName(p.font.familyName) || DEFAULT_FAMILY_NAME,

@@ -1,63 +1,58 @@
-import type { Stroke } from "../../types/project";
+import type { DrawingHistory, HistoryOp, Stroke } from "../../types/project";
 
-/** 1 文字分の描きかけの状態。元に戻す/やり直しはストローク単位で、文字ごとに持つ */
-export interface DrawingHistory {
-  strokes: Stroke[];
-  undoStack: Stroke[][];
-  redoStack: Stroke[][];
+export type { DrawingHistory, HistoryOp };
+
+/** 保存済みの線から履歴を作る（線を 1 本ずつ足した記録にするので、元に戻すで 1 本ずつ消せる） */
+export function createHistory(strokes: readonly Stroke[] = []): DrawingHistory {
+  return { ops: strokes.map((stroke) => ({ type: "add", stroke })), position: strokes.length };
 }
 
-/** 履歴に残す数の上限 */
-export const HISTORY_LIMIT = 200;
+const strokesCache = new WeakMap<DrawingHistory, Stroke[]>();
 
-export function createHistory(strokes: Stroke[] = []): DrawingHistory {
-  return { strokes, undoStack: [], redoStack: [] };
+/** 履歴を適用した、今 Canvas にある線（履歴のオブジェクトごとにキャッシュする） */
+export function strokesOf(h: DrawingHistory): Stroke[] {
+  let strokes = strokesCache.get(h);
+  if (!strokes) {
+    strokes = [];
+    for (const op of h.ops.slice(0, h.position)) {
+      if (op.type === "add") strokes.push(op.stroke);
+      else strokes = [];
+    }
+    strokesCache.set(h, strokes);
+  }
+  return strokes;
 }
 
-function push(h: DrawingHistory, strokes: Stroke[]): DrawingHistory {
-  return {
-    strokes,
-    undoStack: [...h.undoStack, h.strokes].slice(-HISTORY_LIMIT),
-    redoStack: [],
-  };
+/** 操作を足す。やり直しできる操作（position より後ろ）は捨てる */
+function push(h: DrawingHistory, op: HistoryOp): DrawingHistory {
+  return { ops: [...h.ops.slice(0, h.position), op], position: h.position + 1 };
 }
 
 export function addStroke(h: DrawingHistory, stroke: Stroke): DrawingHistory {
-  return push(h, [...h.strokes, stroke]);
+  return push(h, { type: "add", stroke });
 }
 
-/** すべてのストロークを消す（元に戻すで復帰できる） */
+/** すべての線を消す（元に戻すで復帰できる）。線がなければそのまま */
 export function clearStrokes(h: DrawingHistory): DrawingHistory {
-  return h.strokes.length === 0 ? h : push(h, []);
+  return strokesOf(h).length === 0 ? h : push(h, { type: "clear" });
 }
 
 export function undo(h: DrawingHistory): DrawingHistory {
-  const prev = h.undoStack[h.undoStack.length - 1];
-  if (!prev) return h;
-  return {
-    strokes: prev,
-    undoStack: h.undoStack.slice(0, -1),
-    redoStack: [...h.redoStack, h.strokes],
-  };
+  return h.position > 0 ? { ops: h.ops, position: h.position - 1 } : h;
 }
 
 export function redo(h: DrawingHistory): DrawingHistory {
-  const next = h.redoStack[h.redoStack.length - 1];
-  if (!next) return h;
-  return {
-    strokes: next,
-    undoStack: [...h.undoStack, h.strokes],
-    redoStack: h.redoStack.slice(0, -1),
-  };
+  return h.position < h.ops.length ? { ops: h.ops, position: h.position + 1 } : h;
 }
 
-export const canUndo = (h: DrawingHistory) => h.undoStack.length > 0;
-export const canRedo = (h: DrawingHistory) => h.redoStack.length > 0;
+export const canUndo = (h: DrawingHistory) => h.position > 0;
+export const canRedo = (h: DrawingHistory) => h.position < h.ops.length;
 
-/** 保存済みのストロークと違うか（未保存の変更があるか） */
+/** 保存済みの線と違うか（グリフとして保存していない描きかけがあるか） */
 export function isDirty(h: DrawingHistory, saved: readonly Stroke[] | undefined): boolean {
+  const strokes = strokesOf(h);
   const base = saved ?? [];
-  if (h.strokes === base) return false;
-  if (h.strokes.length !== base.length) return true;
-  return JSON.stringify(h.strokes) !== JSON.stringify(base);
+  if (strokes === base) return false;
+  if (strokes.length !== base.length) return true;
+  return strokes.some((s, i) => s !== base[i] && JSON.stringify(s) !== JSON.stringify(base[i]));
 }

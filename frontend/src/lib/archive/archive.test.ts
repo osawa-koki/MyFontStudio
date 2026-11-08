@@ -2,7 +2,8 @@ import JSZip from "jszip";
 import { describe, expect, it } from "vitest";
 import type { Project } from "../../types/project";
 import { createEmptyProject } from "../project/project";
-import { JUU, KUCHI, LATIN_A, MARU, makeGlyph } from "../testing/fixtures";
+import { addStroke, clearStrokes, createHistory, undo } from "../stroke/history";
+import { JUU, KUCHI, LATIN_A, MARU, dot, makeGlyph } from "../testing/fixtures";
 import {
   ArchiveError,
   archiveFileName,
@@ -106,7 +107,7 @@ describe("buildArchive / readArchive", () => {
     const json = toProjectJson(sampleProject(), "2026-11-08T12:00:00+09:00");
     expect(json).toMatchObject({
       format: "handwriting-font-project",
-      formatVersion: 1,
+      formatVersion: 2,
       appVersion: "0.1.0",
     });
     expect(json.glyphs.map((g) => g.char)).toEqual(["口", "十", "。", "A"]);
@@ -205,12 +206,78 @@ describe("readArchive のエラー", () => {
 });
 
 describe("migrations", () => {
-  it("古いバージョンは、マイグレーションがなければエラー", async () => {
+  it("formatVersion 1 の zip は、描いた履歴なしとして読み込む", async () => {
+    const { histories: _h, ...v1 } = { ...toProjectJson(sampleProject(), "x"), formatVersion: 1 };
+    void _h;
+    const buf = await zipOf({
+      "project.json": JSON.stringify(v1),
+      [vectorPath("U+53E3")]: JSON.stringify(KUCHI),
+      [vectorPath("U+5341")]: JSON.stringify(JUU),
+      [vectorPath("U+3002")]: JSON.stringify(MARU),
+      [vectorPath("U+0041")]: JSON.stringify(LATIN_A),
+    });
+    const { project, skipped } = await readArchive(buf);
+    expect(skipped).toEqual([]);
+    expect(project.glyphs["口"]).toEqual(KUCHI);
+    expect(project.drawings).toEqual({});
+  });
+  it("マイグレーションのない古いバージョンはエラー", async () => {
     const json = { ...toProjectJson(sampleProject(), "x"), glyphs: [], formatVersion: 0 };
     await expect(
       readArchive(await zipOf({ "project.json": JSON.stringify(json) })),
     ).rejects.toThrow(/formatVersion/);
-    expect(Object.keys(migrations)).toEqual([]);
+    expect(Object.keys(migrations)).toEqual(["1"]);
+  });
+});
+
+describe("描いた履歴", () => {
+  it("文字ごとの履歴（やり直しできる操作を含む）を zip に入れ、読み込みで戻す", async () => {
+    const p = sampleProject();
+    let h = addStroke(createHistory(KUCHI.strokes), dot(1, 1));
+    h = undo(clearStrokes(h));
+    p.drawings = { 口: h, 未: addStroke(createHistory(), dot(5, 5)), 空: createHistory() };
+    const zipped = await buildArchive({
+      project: p,
+      savedAt: "",
+      ttf: null,
+      otf: null,
+      previews: new Map(),
+    });
+    const names = readZipEntries(toBuffer(zipped)).map((e) => e.name);
+    expect(names).toContain("rawdata/history/U+53E3.json");
+    expect(names).toContain("rawdata/history/U+672A.json");
+    // 操作のない履歴は入れない
+    expect(names).not.toContain("rawdata/history/U+7A7A.json");
+    const { project, skipped } = await readArchive(toBuffer(zipped));
+    expect(skipped).toEqual([]);
+    expect(project.drawings["口"]).toEqual(h);
+    expect(project.drawings["口"]!.position).toBe(h.ops.length - 1);
+    expect(project.drawings["未"]).toEqual(p.drawings["未"]);
+  });
+
+  it("壊れた履歴は、その文字の履歴だけ飛ばす（字形は読み込む）", async () => {
+    const json = toProjectJson(sampleProject(), "x");
+    json.histories = [
+      { char: "口", codepoint: "U+53E3", file: "rawdata/history/U+53E3.json" },
+      { char: "十", codepoint: "U+5341", file: "rawdata/history/U+5341.json" },
+      { char: "A", codepoint: "U+0041", file: "../x.json" },
+      { char: "。", codepoint: "U+3002", file: "rawdata/history/U+3002.json" },
+    ];
+    const buf = await zipOf({
+      "project.json": JSON.stringify(json),
+      [vectorPath("U+53E3")]: JSON.stringify(KUCHI),
+      [vectorPath("U+5341")]: JSON.stringify(JUU),
+      "rawdata/history/U+53E3.json": JSON.stringify({
+        char: "口",
+        codepoint: "U+53E3",
+        history: { ops: [], position: 3 },
+      }),
+      "rawdata/history/U+5341.json": "{",
+    });
+    const { project, skipped } = await readArchive(buf);
+    expect(project.glyphs["口"]).toEqual(KUCHI);
+    expect(project.drawings).toEqual({});
+    expect(skipped.map((s) => s.char)).toEqual(expect.arrayContaining(["口", "十", "A", "。"]));
   });
 });
 

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Stroke } from "../../types/project";
 import {
-  HISTORY_LIMIT,
   addStroke,
   canRedo,
   canUndo,
@@ -9,6 +8,7 @@ import {
   createHistory,
   isDirty,
   redo,
+  strokesOf,
   undo,
 } from "./history";
 
@@ -20,28 +20,38 @@ describe("history", () => {
     expect(canUndo(h)).toBe(false);
     h = addStroke(h, s(1));
     h = addStroke(h, s(2));
-    expect(h.strokes).toEqual([s(1), s(2)]);
+    expect(strokesOf(h)).toEqual([s(1), s(2)]);
     h = undo(h);
-    expect(h.strokes).toEqual([s(1)]);
+    expect(strokesOf(h)).toEqual([s(1)]);
     expect(canRedo(h)).toBe(true);
     h = redo(h);
-    expect(h.strokes).toEqual([s(1), s(2)]);
+    expect(strokesOf(h)).toEqual([s(1), s(2)]);
     expect(canRedo(h)).toBe(false);
   });
 
-  it("新しく描くとやり直しの履歴は消える", () => {
+  it("保存済みの線から作ると、元に戻すで 1 本ずつ消せる", () => {
+    let h = createHistory([s(1), s(2)]);
+    expect(h.position).toBe(2);
+    h = undo(h);
+    expect(strokesOf(h)).toEqual([s(1)]);
+  });
+
+  it("新しく描くとやり直しの操作は捨てる", () => {
     let h = addStroke(addStroke(createHistory(), s(1)), s(2));
     h = addStroke(undo(h), s(3));
-    expect(h.strokes).toEqual([s(1), s(3)]);
+    expect(strokesOf(h)).toEqual([s(1), s(3)]);
+    expect(h.ops).toHaveLength(2);
     expect(canRedo(h)).toBe(false);
   });
 
-  it("クリアは元に戻せる。空ならなにもしない", () => {
+  it("クリアは元に戻せる。クリアのあとに描いた線だけが残る。空ならなにもしない", () => {
     let h = addStroke(createHistory([s(9)]), s(1));
     h = clearStrokes(h);
-    expect(h.strokes).toEqual([]);
-    expect(undo(h).strokes).toEqual([s(9), s(1)]);
+    expect(strokesOf(h)).toEqual([]);
+    expect(strokesOf(undo(h))).toEqual([s(9), s(1)]);
     expect(clearStrokes(h)).toBe(h);
+    h = addStroke(h, s(5));
+    expect(strokesOf(h)).toEqual([s(5)]);
   });
 
   it("履歴がなければ元に戻す・やり直しはそのまま", () => {
@@ -50,13 +60,12 @@ describe("history", () => {
     expect(redo(h)).toBe(h);
   });
 
-  it("履歴は上限まで", () => {
-    let h = createHistory();
-    for (let i = 0; i < HISTORY_LIMIT + 10; i++) h = addStroke(h, s(i));
-    expect(h.undoStack).toHaveLength(HISTORY_LIMIT);
+  it("strokesOf は同じ履歴ならキャッシュを返す", () => {
+    const h = createHistory([s(1)]);
+    expect(strokesOf(h)).toBe(strokesOf(h));
   });
 
-  it("isDirty は保存済みのストロークとの違い", () => {
+  it("isDirty は保存済みの線との違い", () => {
     const saved = [s(1)];
     expect(isDirty(createHistory(saved), saved)).toBe(false);
     expect(isDirty(createHistory([s(1)]), saved)).toBe(false);

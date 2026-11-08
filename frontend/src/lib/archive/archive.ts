@@ -12,6 +12,7 @@ import {
 import {
   FORMAT,
   FORMAT_VERSION,
+  historyFileSchema,
   migrations,
   projectJsonSchema,
   vectorSchema,
@@ -27,7 +28,9 @@ export const LIMITS = { maxTotalBytes: 200 * 1024 * 1024, maxFiles: 20_000 };
 export const PROJECT_JSON = "project.json";
 export const vectorPath = (codepoint: string) => `rawdata/vector/${codepoint}.json`;
 export const previewPath = (codepoint: string) => `rawdata/preview/${codepoint}.png`;
+export const historyPath = (codepoint: string) => `rawdata/history/${codepoint}.json`;
 const VECTOR_PATH = /^rawdata\/vector\/U\+[0-9A-F]{4,6}\.json$/;
+const HISTORY_PATH = /^rawdata\/history\/U\+[0-9A-F]{4,6}\.json$/;
 
 /** {familyName}_{YYYYMMDD-HHmm}.zip */
 export function archiveFileName(familyName: string, date: Date = new Date()): string {
@@ -49,6 +52,13 @@ function createdGlyphs(project: Project): GlyphData[] {
   return out;
 }
 
+/** 描いた履歴のある文字（操作が 1 つ以上ある、取り込める文字） */
+function drawingChars(project: Project): string[] {
+  return Object.entries(project.drawings)
+    .filter(([c, h]) => h.ops.length > 0 && isValidChar(c))
+    .map(([c]) => c);
+}
+
 export function toProjectJson(project: Project, savedAt: string): ProjectJson {
   return {
     format: FORMAT,
@@ -64,6 +74,10 @@ export function toProjectJson(project: Project, savedAt: string): ProjectJson {
       codepoint: g.codepoint,
       file: vectorPath(g.codepoint),
     })),
+    histories: drawingChars(project).map((c) => {
+      const codepoint = toCodepointLabel(c);
+      return { char: c, codepoint, file: historyPath(codepoint) };
+    }),
   };
 }
 
@@ -91,6 +105,14 @@ export async function buildArchive(input: ArchiveInput): Promise<Uint8Array> {
     zip.file(vectorPath(g.codepoint), JSON.stringify(g), opts);
     const png = input.previews.get(g.char);
     if (png) zip.file(previewPath(g.codepoint), png, opts);
+  }
+  for (const c of drawingChars(project)) {
+    const codepoint = toCodepointLabel(c);
+    zip.file(
+      historyPath(codepoint),
+      JSON.stringify({ char: c, codepoint, history: project.drawings[c] }),
+      opts,
+    );
   }
   return zip.generateAsync({
     type: "uint8array",
@@ -235,10 +257,43 @@ export async function readArchive(
     }
   }
 
-  // 一覧：project.json の queue（正しい文字だけ）に、読み込めたグリフを足す
+  // 描いた履歴。壊れていても字形は読み込んでいるので、その文字の履歴だけ飛ばす
+  for (const entry of json.histories) {
+    const fail = (reason: string) => skipped.push({ char: entry.char, reason });
+    if (
+      !HISTORY_PATH.test(entry.file) ||
+      entry.file !== historyPath(entry.codepoint) ||
+      fromCodepointLabel(entry.codepoint) !== entry.char ||
+      !isValidChar(entry.char)
+    ) {
+      fail("描いた履歴の場所が正しくありません");
+      continue;
+    }
+    const file = zip.file(entry.file);
+    if (!file) {
+      fail("描いた履歴がありません");
+      continue;
+    }
+    try {
+      const parsed = historyFileSchema.safeParse(JSON.parse(await file.async("string")));
+      if (!parsed.success || parsed.data.char !== entry.char) {
+        fail("描いた履歴の形式が正しくありません（字形は読み込みました）");
+        continue;
+      }
+      project.drawings[entry.char] = parsed.data.history;
+    } catch {
+      fail("描いた履歴が壊れています（字形は読み込みました）");
+    }
+  }
+
+  // 一覧：project.json の queue（正しい文字だけ）に、読み込めたグリフと履歴の文字を足す
   const queue: string[] = [];
   const seen = new Set<string>();
-  for (const c of [...json.queue, ...Object.keys(project.glyphs)]) {
+  for (const c of [
+    ...json.queue,
+    ...Object.keys(project.glyphs),
+    ...Object.keys(project.drawings),
+  ]) {
     if (seen.has(c) || !isValidChar(c)) continue;
     seen.add(c);
     queue.push(c);
