@@ -5,16 +5,17 @@
 - `frontend/`：Vite + React + TypeScript（strict）+ Tailwind CSS の画面（SPA）。コードはすべてここにある
   - `src/lib/`：ロジック（純粋な関数。React に依存させない。テストはここに書く）
     - `project/`：プロジェクトの初期値・名前の直し方・コードポイントの表記
-    - `stroke/`：ストロークの記録（丸め・間引き・em 座標への変換・筆圧の決め方）
+    - `stroke/`：ストロークの記録（丸め・間引き・em 座標への変換・筆圧の決め方）、元に戻す/やり直しの履歴（`history.ts`）、Canvas のガイド線（`guides.ts`）
     - `glyph/`：ストローク → 輪郭 → `GlyphOutline`（仕様 5 章）。`outline.ts` が手順（perfect-freehand → polygon-clipping の union → Douglas–Peucker → 中点の二次ベジェ → フォント座標・向き）、`width.ts` が送り幅（East Asian Width）、`path.ts` が SVG の path、`constants.ts` がメトリクスなどの値
     - `font/`：フォントの生成（仕様 6 章）。`build.ts` が入口（`GlyphOutline[]` とフォントの設定 → ArrayBuffer）、`ttf.ts`（fonteditor-core）・`otf.ts`（opentype.js）がアダプタ、`sfnt.ts` が書き出したあとのテーブルの差し替え（name・OS/2）と書き換え（head・hhea・maxp・post）、`glyphs.ts` が .notdef・スペースを含むグリフの一覧、`spec.ts` が名前とバージョン、`metrics.ts` がメトリクスの値、`fontface.ts` がプレビュー用の FontFace の登録
     - `testing/fixtures.ts`：テスト用の固定のストローク（「口」「十」「。」「A」）
-  - `src/store/`：zustand のストア（`projectStore`：プロジェクトの状態、`uiStore`：通知・確認ダイアログ）
+  - `src/store/`：zustand のストア（`projectStore`：プロジェクトの状態、`editorStore`：入力ページの描きかけ（文字ごとの履歴とペン。保存するまでプロジェクトに入れない）、`uiStore`：通知・確認ダイアログ）
+    - zustand 5 では、セレクターが毎回新しいオブジェクトを返すと無限に再描画される。組み立てが要る値は、値を選んでから `useMemo` で作る（`editorStore` の `useHistory`・`usePen`）
   - `src/types/project.ts`：プロジェクト・グリフの型（zip の JSON と同じ形）
-  - `src/pages/`・`src/components/`：画面
+  - `src/pages/`・`src/components/`：画面。`DrawingCanvas` は 2 枚の Canvas（下：ガイド・お手本・確定したストローク、上：描いている途中）で、各ストロークの輪郭を nonzero で塗る
   - `src/router.tsx`：ルーティング。`VITE_ROUTER=hash` なら HashRouter（GitHub Pages）、それ以外は BrowserRouter
 - `Dockerfile`・`nginx/default.conf.template`・`render.yaml`：Node.js でビルド → 非 root の Nginx で配信（SPA のフォールバック・セキュリティヘッダー・CSP・`/healthz`）。Render 用
-- `e2e/`：動いているサーバー（コンテナ）に対する Playwright のテスト。応答とヘッダー（`server.spec.ts`）、ブラウザでの操作（`ui.spec.ts`）。`fixtures.ts` の `test` を使うと、コンソールのエラー（CSP の違反など）があれば失敗する
+- `e2e/`：動いているサーバー（コンテナ）に対する Playwright のテスト。応答とヘッダー（`server.spec.ts`）、ブラウザでの操作（`ui.spec.ts`。Canvas にはマウスで描く：`drawing.ts`）。`fixtures.ts` の `test` を使うと、コンソールのエラー（CSP の違反など）があれば失敗する
 - `docs/SPEC.md`：仕様書。仕様を変えたら、本文と「12. 仕様の修正履歴」を直す
 - Node.js のバージョンは `frontend/.node-version` で固定している
 - TypeScript は 6.0 系にとどめている（typescript-eslint が 7 に対応していないため。Dependabot でも上げない）
