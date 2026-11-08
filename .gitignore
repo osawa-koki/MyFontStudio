@@ -1,0 +1,22 @@
+### macOS ###
+.DS_Store
+
+### Node ###
+node_modules/
+dist/
+*.log
+*.tsbuildinfo
+coverage/
+
+### フォントの検証の出力 ###
+/frontend/out/
+
+### VisualStudioCode ###
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+### Playwright ###
+/e2e/test-results/
+/e2e/playwright-report/
+/e2e/blob-report/
