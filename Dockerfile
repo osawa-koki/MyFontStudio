@@ -1,5 +1,7 @@
 # ---- 画面（Next.js の静的エクスポート）のビルド ----
-FROM node:26-alpine AS web-builder
+# 書き出すのは静的ファイル（アーキテクチャによらない）なので、ビルドするマシンのアーキテクチャで動かす
+# （arm64 のイメージを作るときも、エミュレーションで Next.js をビルドしない）
+FROM --platform=$BUILDPLATFORM node:26-alpine AS web-builder
 WORKDIR /app/frontend
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY frontend/package.json frontend/package-lock.json ./
