@@ -4,17 +4,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { openZip } from "../features/archiveActions";
-import {
-  deleteStoredProject,
-  flushProjectSave,
-  listStoredProjects,
-  saveCurrentProjectNow,
-} from "../features/projects";
-import { DEFAULT_FAMILY_NAME, sanitizeFamilyName } from "../lib/project/project";
+import { createProjectInteractive } from "../features/projectActions";
+import { deleteStoredProject, listStoredProjects } from "../features/projects";
 import { projectHref, type ProjectSummary } from "../lib/projects/repository";
-import { useEditorStore } from "../store/editorStore";
 import { useProjectStore } from "../store/projectStore";
-import { askDialog, confirmDialog, notify } from "../store/uiStore";
+import { confirmDialog, notify } from "../store/uiStore";
 
 /** 使い方ページのボタン（新しくはじめる・zip を開く）と、プロジェクトの一覧（開く・削除） */
 export function GuideActions() {
@@ -28,25 +22,8 @@ export function GuideActions() {
   useEffect(refresh, [refresh]);
 
   const start = async () => {
-    const { value, input } = await askDialog({
-      title: "フォント名を決めてください",
-      message:
-        "英数字だけで入力します（あとからヘッダーで変えられます）。新しいプロジェクトとして作ります。",
-      input: { label: "フォント名", value: DEFAULT_FAMILY_NAME, placeholder: DEFAULT_FAMILY_NAME },
-      buttons: [
-        { label: "キャンセル", value: "cancel" },
-        { label: "はじめる", value: "ok", variant: "primary" },
-      ],
-      cancelValue: "cancel",
-    });
-    if (value !== "ok") return;
-    await flushProjectSave();
-    useEditorStore.getState().reset();
-    const id = useProjectStore
-      .getState()
-      .newProject(sanitizeFamilyName(input) || DEFAULT_FAMILY_NAME);
-    await saveCurrentProjectNow();
-    router.push(projectHref("/editor", id));
+    const id = await createProjectInteractive();
+    if (id) router.push(projectHref("/editor", id));
   };
 
   const remove = async (p: ProjectSummary) => {

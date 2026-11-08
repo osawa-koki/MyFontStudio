@@ -9,7 +9,11 @@ import { useProjectStore } from "../store/projectStore";
  * プロジェクトは自動で IndexedDB に保存するので、zip に保存していないだけでは警告しない
  */
 export function hasUnsavedChanges(): boolean {
-  if (hasPendingSave()) return true;
+  return hasPendingSave() || hasUnsavedDrafts();
+}
+
+/** グリフとして保存していない描きかけのストロークがあるか */
+export function hasUnsavedDrafts(): boolean {
   const { project } = useProjectStore.getState();
   return Object.entries(useEditorStore.getState().histories).some(([c, h]) =>
     isDirty(h, project.glyphs[c]?.strokes),
