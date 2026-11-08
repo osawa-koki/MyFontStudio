@@ -4,7 +4,10 @@ import { test as base, expect } from "@playwright/test";
  * すべての画面のテストで、コンソールのエラー（CSP の違反など）とページの例外がないことを確かめる。
  * 未保存の警告（beforeunload）のダイアログは受け入れて（リロード・移動を続けて）、beforeUnloadCount に数える
  */
-export const test = base.extend<{ consoleErrors: string[]; beforeUnloadCount: { value: number } }>({
+export const test = base.extend<{
+  consoleErrors: string[];
+  beforeUnloadCount: { value: number };
+}>({
   beforeUnloadCount: [
     async ({ page }, use) => {
       const count = { value: 0 };

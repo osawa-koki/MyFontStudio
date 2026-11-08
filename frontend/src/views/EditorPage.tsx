@@ -9,6 +9,7 @@ import { isFullWidthChar } from "../lib/glyph/width";
 import { commitDraft } from "../features/glyphActions";
 import { PRESETS, isCreated, nextUncreated, parseInputChars, prevChar } from "../lib/project/chars";
 import { toCodepointLabel } from "../lib/project/project";
+import { projectHref } from "../lib/projects/repository";
 import { canRedo, canUndo, isDirty } from "../lib/stroke/history";
 import { useEditorStore, useHistory, usePen } from "../store/editorStore";
 import { useProjectStore } from "../store/projectStore";
@@ -26,6 +27,7 @@ export function EditorPage() {
   const glyphs = useProjectStore((s) => s.project.glyphs);
   const defaults = useProjectStore((s) => s.project.defaults);
   const storedCurrent = useProjectStore((s) => s.currentChar);
+  const projectId = useProjectStore((s) => s.projectId);
   const project = useProjectStore.getState();
   const editor = useEditorStore();
   const [input, setInput] = useState("");
@@ -202,7 +204,7 @@ export function EditorPage() {
             className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-green-300 bg-green-50 p-3"
           >
             <span className="font-bold text-green-900">すべての文字を作成しました 🎉</span>
-            <Link href="/preview" className="btn btn-primary">
+            <Link href={projectHref("/preview", projectId)} className="btn btn-primary">
               プレビューで確かめる
             </Link>
           </div>

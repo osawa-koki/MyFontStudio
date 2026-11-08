@@ -4,6 +4,7 @@ import {
   sanitizeDisplayName,
   sanitizeFamilyName,
 } from "../lib/project/project";
+import { createProjectId } from "../lib/projects/repository";
 import type { FontSettings, GlyphData, Project, ProjectDefaults } from "../types/project";
 
 export interface ProjectState {
@@ -12,11 +13,14 @@ export interface ProjectState {
   currentChar: string | null;
   /** 最後に zip に保存（または読み込み）してから変更があるか */
   dirty: boolean;
-  /** 作業中のプロジェクトがあるか（新しくはじめた・読み込んだ・復元した） */
-  started: boolean;
+  /** 開いているプロジェクトの ID（UUID。URL の ?uuid= と IndexedDB のキーに使う）。開いていなければ null */
+  projectId: string | null;
 
-  newProject(familyName?: string): void;
-  loadProject(project: Project, options?: { dirty?: boolean }): void;
+  /** 新しいプロジェクトを開く。id を省略すると新しい UUID を振る。振った ID を返す */
+  newProject(familyName?: string, id?: string): string;
+  loadProject(project: Project, options: { id: string; dirty?: boolean }): void;
+  /** プロジェクトを閉じる（開いていたものを削除したときなど） */
+  closeProject(): void;
   setFontSettings(settings: Partial<FontSettings>): void;
   setDefaults(defaults: Partial<ProjectDefaults>): void;
   /** 文字一覧の末尾に追加する（重複は除く）。追加した文字を返す */
@@ -36,24 +40,24 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   project: createEmptyProject(),
   currentChar: null,
   dirty: false,
-  started: false,
+  projectId: null,
 
-  newProject(familyName) {
+  newProject(familyName, id = createProjectId()) {
     set({
       project: createEmptyProject(familyName),
       currentChar: null,
       dirty: false,
-      started: true,
+      projectId: id,
     });
+    return id;
   },
 
   loadProject(project, options) {
-    set({
-      project,
-      currentChar: null,
-      dirty: options?.dirty ?? false,
-      started: true,
-    });
+    set({ project, currentChar: null, dirty: options.dirty ?? false, projectId: options.id });
+  },
+
+  closeProject() {
+    set({ project: createEmptyProject(), currentChar: null, dirty: false, projectId: null });
   },
 
   setFontSettings(settings) {
@@ -67,7 +71,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     }
     if (settings.designer !== undefined) font.designer = sanitizeDisplayName(settings.designer);
     if (settings.exportCount !== undefined) font.exportCount = settings.exportCount;
-    set((s) => ({ project: { ...s.project, font }, dirty: true, started: true }));
+    set((s) => ({ project: { ...s.project, font }, dirty: true }));
   },
 
   setDefaults(defaults) {
@@ -90,7 +94,6 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       set((s) => ({
         project: { ...s.project, queue: [...s.project.queue, ...added] },
         dirty: true,
-        started: true,
       }));
     }
     return added;
@@ -116,7 +119,6 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       return {
         project: { ...s.project, queue, glyphs: { ...s.project.glyphs, [glyph.char]: glyph } },
         dirty: true,
-        started: true,
       };
     });
   },

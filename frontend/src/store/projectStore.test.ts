@@ -20,10 +20,14 @@ describe("projectStore", () => {
     s().markSaved();
   });
 
-  it("newProject は空のプロジェクトを作り、作業中にする", () => {
-    s().newProject("Foo");
+  it("newProject は空のプロジェクトを作り、UUID を振る。closeProject で閉じる", () => {
+    const id = s().newProject("Foo");
     expect(s().project.font.familyName).toBe("Foo");
-    expect(s().started).toBe(true);
+    expect(s().projectId).toBe(id);
+    expect(id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(s().newProject("Bar", "x")).toBe("x");
+    s().closeProject();
+    expect(s().projectId).toBeNull();
     expect(s().dirty).toBe(false);
   });
 
@@ -94,10 +98,11 @@ describe("projectStore", () => {
   it("loadProject は置き換えて保存済みにする", () => {
     s().addChars(["a"]);
     const p = { ...s().project, queue: ["x"] };
-    s().loadProject(p);
+    s().loadProject(p, { id: "a" });
+    expect(s().projectId).toBe("a");
     expect(s().project.queue).toEqual(["x"]);
     expect(s().dirty).toBe(false);
-    s().loadProject(p, { dirty: true });
+    s().loadProject(p, { id: "a", dirty: true });
     expect(s().dirty).toBe(true);
   });
 });

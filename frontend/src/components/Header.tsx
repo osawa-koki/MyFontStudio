@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { countGlyphs } from "../lib/project/project";
+import { projectHref } from "../lib/projects/repository";
 import { useProjectStore } from "../store/projectStore";
 import { FontDownloadMenu } from "./FontDownloadMenu";
 import { FontSettingsButton } from "./FontSettingsButton";
@@ -18,6 +19,10 @@ export function Header() {
   const glyphCount = useProjectStore((s) => countGlyphs(s.project));
   const dirty = useProjectStore((s) => s.dirty);
   const pathname = usePathname();
+  const projectId = useProjectStore((s) => s.projectId);
+  // 入力・プレビューへのリンクには、開いているプロジェクトの ?uuid= を付ける
+  const hrefOf = (to: string) =>
+    to === "/" ? "/" : projectHref(to as "/editor" | "/preview", projectId);
   const isActive = (to: string, end: boolean) =>
     end ? pathname === to : pathname === to || pathname.startsWith(`${to}/`);
 
@@ -32,7 +37,7 @@ export function Header() {
             {NAV.map((n) => (
               <Link
                 key={n.to}
-                href={n.to}
+                href={hrefOf(n.to)}
                 aria-current={isActive(n.to, n.end) ? "page" : undefined}
                 className={`rounded-md px-2 py-1 text-sm ${isActive(n.to, n.end) ? "bg-blue-100 font-bold text-blue-900" : "text-slate-600 hover:bg-slate-100"}`}
               >

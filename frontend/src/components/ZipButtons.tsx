@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { openZip, saveZip } from "../features/archiveActions";
+import { projectHref } from "../lib/projects/repository";
 
 /** ヘッダーの「zip で保存」「zip を開く」 */
 export function ZipButtons() {
@@ -42,7 +43,8 @@ export function ZipButtons() {
           e.target.value = "";
           if (file) {
             void run(async () => {
-              if (await openZip(file)) router.push("/editor");
+              const id = await openZip(file);
+              if (id) router.push(projectHref("/editor", id));
             });
           }
         }}
