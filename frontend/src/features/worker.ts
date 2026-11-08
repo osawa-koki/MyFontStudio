@@ -1,8 +1,8 @@
-import { ArchiveError } from "../lib/archive/archive";
+import { ArchiveError } from "../lib/archive/common";
 import { renderGlyphPng } from "../lib/glyph/png";
 import { useTaskStore } from "../store/taskStore";
 import type { WorkerRequest, WorkerResponse } from "../workers/font.worker";
-import { runTask, type Task, type TaskResult } from "../workers/tasks";
+import type { Task, TaskResult } from "../workers/tasks";
 
 /** 取り消したとき */
 export class TaskCancelledError extends Error {
@@ -80,6 +80,8 @@ export async function runInWorker<T extends Task>(
   try {
     const w = getWorker();
     if (!w) {
+      // Worker が使えないときだけ読み込む（JSZip・fonteditor-core・opentype.js を画面のバンドルに入れない）
+      const { runTask } = await import("../workers/tasks");
       return await runTask(task, {
         onProgress,
         renderPng: typeof document !== "undefined" ? renderGlyphPng : undefined,

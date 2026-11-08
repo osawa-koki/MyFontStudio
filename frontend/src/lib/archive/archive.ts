@@ -1,4 +1,7 @@
 import JSZip from "jszip";
+import { ArchiveError } from "./common";
+
+export { ArchiveError, archiveFileName } from "./common";
 import type { GlyphData, Project } from "../../types/project";
 import { parseInputChars } from "../project/chars";
 import {
@@ -37,12 +40,6 @@ export const previewPath = (codepoint: string) => `rawdata/preview/${codepoint}.
 export const historyPath = (codepoint: string) => `rawdata/history/${codepoint}.json`;
 const VECTOR_PATH = /^rawdata\/vector\/U\+[0-9A-F]{4,6}\.json$/;
 const HISTORY_PATH = /^rawdata\/history\/U\+[0-9A-F]{4,6}\.json$/;
-
-/** {familyName}_{YYYYMMDD-HHmm}.zip */
-export function archiveFileName(familyName: string, date: Date = new Date()): string {
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${familyName}_${date.getFullYear()}${p(date.getMonth() + 1)}${p(date.getDate())}-${p(date.getHours())}${p(date.getMinutes())}.zip`;
-}
 
 /** 作成済み（ストロークのある）グリフを一覧の順に並べる */
 function createdGlyphs(project: Project): GlyphData[] {
@@ -126,8 +123,6 @@ export async function buildArchive(input: ArchiveInput): Promise<Uint8Array> {
     compressionOptions: { level: 6 },
   });
 }
-
-export class ArchiveError extends Error {}
 
 /** JSZip の StreamHelper（使う部分だけ） */
 interface ZipStream {

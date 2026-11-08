@@ -1,4 +1,4 @@
-import { ArchiveError, archiveFileName } from "../lib/archive/archive";
+import { ArchiveError, archiveFileName } from "../lib/archive/common";
 import { downloadBlob } from "../lib/download";
 import { isoWithOffset } from "../lib/project/chars";
 import { openAsNewProject } from "./projects";
