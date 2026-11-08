@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { useAutosave } from "../features/autosave";
 import { useFontPreview } from "../features/fontPreview";
+import { useUnsavedWarning } from "../features/unsavedWarning";
 import { useZipDrop } from "../features/zipDrop";
 import { DialogHost } from "./DialogHost";
 import { Header } from "./Header";
@@ -12,6 +13,7 @@ import { Toasts } from "./Toasts";
 export function AppShell({ children }: { children: ReactNode }) {
   useFontPreview();
   useAutosave();
+  useUnsavedWarning();
   useZipDrop();
   return (
     <div className="flex min-h-screen flex-col">

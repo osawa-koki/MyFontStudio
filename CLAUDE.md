@@ -12,14 +12,14 @@
     - `archive/`：zip の保存・読み込み（仕様 7 章）。`schema.ts` が zod のスキーマ・`formatVersion`・マイグレーション、`zipinfo.ts` が展開前の中央ディレクトリの読み取り（ファイル数・展開後のサイズの上限）、`archive.ts` が組み立てと読み込み（想定外のパスは読まない、壊れたベクター JSON はその文字だけ飛ばす）
     - `autosave/`：IndexedDB への自動保存の読み書き（保存先は差し替えられる。読み込むときにスキーマで確かめる）とデバウンス
     - `testing/fixtures.ts`：テスト用の固定のストローク（「口」「十」「。」「A」）
-  - `src/features/`：ストアと lib をつなぐ処理（`fontPreview.ts`：グリフが変わったら 300ms 待ってプレビュー用の .ttf を作り直す、`actions.ts`：フォントのダウンロード、`glyphActions.ts`：描きかけの保存、`archiveActions.ts`・`zipDrop.ts`・`png.ts`：zip の保存・読み込み・ドラッグ＆ドロップ・プレビュー PNG、`autosave.ts`：起動時の復元の確認と 500ms のデバウンスでの自動保存（idb-keyval）。復元するか決まるまでは保存しない）
+  - `src/features/`：ストアと lib をつなぐ処理（`fontPreview.ts`：グリフが変わったら 300ms 待ってプレビュー用の .ttf を作り直す、`actions.ts`：フォントのダウンロード、`glyphActions.ts`：描きかけの保存、`archiveActions.ts`・`zipDrop.ts`・`png.ts`：zip の保存・読み込み・ドラッグ＆ドロップ・プレビュー PNG、`unsavedWarning.ts`：未保存の変更があるときの beforeunload の警告、`autosave.ts`：起動時の復元の確認と 500ms のデバウンスでの自動保存（idb-keyval）。復元するか決まるまでは保存しない）
   - `src/store/`：zustand のストア（`projectStore`：プロジェクトの状態、`fontStore`：プレビュー用のフォント（FontFace の名前・作成済みの文字）、`previewStore`：適用画面の表示設定、`editorStore`：入力ページの描きかけ（文字ごとの履歴とペン。保存するまでプロジェクトに入れない）、`uiStore`：通知・確認ダイアログ）
     - zustand 5 では、セレクターが毎回新しいオブジェクトを返すと無限に再描画される。組み立てが要る値は、値を選んでから `useMemo` で作る（`editorStore` の `useHistory`・`usePen`）
   - `src/types/project.ts`：プロジェクト・グリフの型（zip の JSON と同じ形）
   - `src/views/`・`src/components/`：画面（`src/pages/` は Next.js の Pages Router と衝突するので使わない）。入力・プレビューと、ストアを使う部品はクライアントコンポーネント（`"use client"`）。共通の外枠は `AppShell`。`DrawingCanvas` は 2 枚の Canvas（下：ガイド・お手本・確定したストローク、上：描いている途中）で、各ストロークの輪郭を nonzero で塗る
 - `Dockerfile`・`nginx/default.conf.template`・`render.yaml`：Node.js で静的エクスポート → 非 root の Nginx で配信（`/editor` と `/editor/` → `editor/index.html`、ないページは `404.html`、セキュリティヘッダー・CSP・`/healthz`）。Render 用
   - CSP の `script-src` は、Next.js が HTML に埋め込むインラインのスクリプトの SHA-256（ビルド時に `frontend/scripts/csp-hashes.mjs` が集めて `/etc/nginx/csp.conf` に書く）。`'unsafe-inline'` にしない
-- `e2e/`：動いているサーバー（コンテナ）に対する Playwright のテスト。応答とヘッダー（`server.spec.ts`）、ブラウザでの操作（`ui.spec.ts`・`editor.spec.ts`・`preview.spec.ts`・`archive.spec.ts`・`autosave.spec.ts`。Canvas にはマウスで描く：`drawing.ts`）。`fixtures.ts` の `test` を使うと、コンソールのエラー（CSP の違反など）があれば失敗する
+- `e2e/`：動いているサーバー（コンテナ）に対する Playwright のテスト。応答とヘッダー（`server.spec.ts`）、ブラウザでの操作（`ui.spec.ts`・`editor.spec.ts`・`preview.spec.ts`・`archive.spec.ts`・`autosave.spec.ts`・`guide.spec.ts`。`fixtures.ts` は beforeunload のダイアログを受け入れて数える。Canvas にはマウスで描く：`drawing.ts`）。`fixtures.ts` の `test` を使うと、コンソールのエラー（CSP の違反など）があれば失敗する
 - `docs/SPEC.md`：仕様書。仕様を変えたら、本文と「12. 仕様の修正履歴」を直す
 - Node.js のバージョンは `frontend/.node-version` で固定している
 - TypeScript は 6.0 系にとどめている（typescript-eslint が 7 に対応していないため。Dependabot でも上げない）
@@ -61,6 +61,7 @@ npm run lint            # ESLint と Prettier（直すときは npm run format�
 npm run test:coverage   # 単体テストとカバレッジの下限（vitest.config.ts の coverage.thresholds）
 npm run build           # 静的エクスポート（out/）。BASE_PATH=/MyFontStudio で GitHub Pages 用
 npm run dev             # 開発サーバー
+npm run perf            # 性能の確認（300 文字・2,000 文字のダミーデータで、1 文字保存してからフォントを作り直すまでの時間）
 
 # 生成したフォントの確認（frontend/ で。fontTools と OTS が要る）
 python3 -m venv /tmp/fontcheck && /tmp/fontcheck/bin/pip install -r scripts/requirements-fonts.txt
@@ -107,6 +108,7 @@ docker rm -f app
 
 - **ブラウザの外にデータを送らない**：手書きのデータを外部に送る処理・アクセス解析・外部 CDN を入れない。フォントやライブラリはすべてバンドルする。
 - **ロジックは `frontend/src/lib/` に純粋な関数で書く**：React に依存させず、Vitest で単体テストする。画面（`pages/`・`components/`）は `lib/` を呼ぶだけにする。
+- **画面を止めない**：輪郭はグリフ単位でキャッシュし、キャッシュのない輪郭をまとめて計算するとき（zip の読み込み直後など）は `collectOutlinesAsync` で区切って計算する。性能の目安は仕様 10.1（`npm run perf`）。
 - **同じ入力から同じフォント**：ストローク → グリフの変換（`lib/glyph`）は決定的な純粋関数にする。zip から復元したときも同じ処理でフォントを作り直す。復元の正はベクター JSON（zip の中の .ttf / .otf・PNG は読み込みに使わない）。
 - **.ttf と .otf は同じ中間データから作る**：`GlyphOutline` と `FontSpec` を受け取り ArrayBuffer を返す。形式ごとの違いはアダプタ（`lib/font/ttf.ts`・`lib/font/otf.ts`）に閉じ込める。名前・メトリクス・OS/2 の値は、ライブラリで書き出したあとに `lib/font/sfnt.ts` でテーブルを差し替えて、両形式でそろえる（仕様 6.4）。
 - **座標**：Canvas とストロークは 0〜1000 の em 座標（y 下向き）。フォント座標は `fontX = x`、`fontY = 880 - y`（y 上向き、ベースライン 0）。

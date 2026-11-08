@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { collectOutlines } from "../lib/font/outlines";
+import { collectOutlinesAsync } from "../lib/font/outlines";
 import { registerPreviewFont, unregisterPreviewFont } from "../lib/font/fontface";
 import { useFontStore } from "../store/fontStore";
 import { useProjectStore } from "../store/projectStore";
@@ -15,7 +15,9 @@ export async function rebuildPreviewFont(): Promise<void> {
   const { project } = useProjectStore.getState();
   const set = useFontStore.getState().set;
   try {
-    const outlines = collectOutlines(project);
+    // キャッシュのない輪郭（zip の読み込み直後など）をたくさん計算しても画面を止めないよう、区切って計算する
+    const outlines = await collectOutlinesAsync(project, { cancelled: () => my !== generation });
+    if (!outlines) return;
     if (outlines.length === 0) {
       unregisterPreviewFont();
       set({ family: null, outlineCount: 0, chars: new Set(), error: null });

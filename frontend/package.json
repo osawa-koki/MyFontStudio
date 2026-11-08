@@ -11,7 +11,8 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "fonts:sample": "tsx scripts/sample-fonts.ts"
+    "fonts:sample": "tsx scripts/sample-fonts.ts",
+    "perf": "tsx scripts/perf.ts"
   },
   "dependencies": {
     "fonteditor-core": "^2.6.3",
