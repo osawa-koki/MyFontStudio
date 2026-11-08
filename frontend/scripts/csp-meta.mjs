@@ -6,7 +6,9 @@ import { contentSecurityPolicy, htmlFiles, inlineScriptHashes } from "./csp.mjs"
 
 const root = process.argv[2] ?? "out";
 // ハッシュは <meta> を入れる前に集める（<meta> を入れてもスクリプトの中身は変わらない）
-const policy = contentSecurityPolicy(`'self' ${inlineScriptHashes(root).join(" ")}`, { meta: true });
+const policy = contentSecurityPolicy(`'self' ${inlineScriptHashes(root).join(" ")}`, {
+  meta: true,
+});
 const tag = `<meta http-equiv="Content-Security-Policy" content="${policy}"/>`;
 const files = htmlFiles(root);
 for (const f of files) {
