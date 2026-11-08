@@ -52,3 +52,26 @@ test("保存していない描きかけのストロークがあると、タブ�
   await page.reload();
   expect(beforeUnloadCount.value).toBe(1);
 });
+
+test("このブラウザへの保存の状態（永続化・使用量）を表示し、永続化を頼める", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const status = page.getByTestId("storage-status");
+  await expect(status).toContainText("使用量");
+  await expect(status).toContainText("zip でも保存してください");
+  const button = status.getByRole("button", {
+    name: "データを消されないようにする",
+  });
+  // ブラウザが永続化を許すかは環境による。許されていなければボタンを押して結果を知らせる
+  if (await button.isVisible()) {
+    await button.click();
+    await expect(
+      page
+        .getByRole("status")
+        .filter({ hasText: /設定しました|許可されませんでした/ }),
+    ).toBeVisible();
+  } else {
+    await expect(status).toContainText("自動では消されません");
+  }
+});
