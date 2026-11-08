@@ -1,11 +1,13 @@
 import { Outlet } from "react-router";
 import { useFontPreview } from "../app/fontPreview";
+import { useZipDrop } from "../app/zipDrop";
 import { DialogHost } from "./DialogHost";
 import { Header } from "./Header";
 import { Toasts } from "./Toasts";
 
 export function Layout() {
   useFontPreview();
+  useZipDrop();
   return (
     <div className="flex min-h-screen flex-col">
       <Header />

@@ -1,0 +1,248 @@
+import JSZip from "jszip";
+import type { GlyphData, Project } from "../../types/project";
+import { parseInputChars } from "../project/chars";
+import {
+  DEFAULT_FAMILY_NAME,
+  createEmptyProject,
+  fromCodepointLabel,
+  sanitizeDisplayName,
+  sanitizeFamilyName,
+  toCodepointLabel,
+} from "../project/project";
+import {
+  FORMAT,
+  FORMAT_VERSION,
+  migrations,
+  projectJsonSchema,
+  vectorSchema,
+  type ProjectJson,
+} from "./schema";
+import { readZipEntries } from "./zipinfo";
+
+export const APP_VERSION = "0.1.0";
+
+/** 不正な zip の対策：展開後の合計サイズとファイル数の上限（仕様 7.5） */
+export const LIMITS = { maxTotalBytes: 200 * 1024 * 1024, maxFiles: 20_000 };
+
+export const PROJECT_JSON = "project.json";
+export const vectorPath = (codepoint: string) => `rawdata/vector/${codepoint}.json`;
+export const previewPath = (codepoint: string) => `rawdata/preview/${codepoint}.png`;
+const VECTOR_PATH = /^rawdata\/vector\/U\+[0-9A-F]{4,6}\.json$/;
+
+/** {familyName}_{YYYYMMDD-HHmm}.zip */
+export function archiveFileName(familyName: string, date: Date = new Date()): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${familyName}_${date.getFullYear()}${p(date.getMonth() + 1)}${p(date.getDate())}-${p(date.getHours())}${p(date.getMinutes())}.zip`;
+}
+
+/** 作成済み（ストロークのある）グリフを一覧の順に並べる */
+function createdGlyphs(project: Project): GlyphData[] {
+  const order = [...project.queue, ...Object.keys(project.glyphs)];
+  const seen = new Set<string>();
+  const out: GlyphData[] = [];
+  for (const c of order) {
+    const g = project.glyphs[c];
+    if (seen.has(c) || !g || g.strokes.length === 0) continue;
+    seen.add(c);
+    out.push(g);
+  }
+  return out;
+}
+
+export function toProjectJson(project: Project, savedAt: string): ProjectJson {
+  return {
+    format: FORMAT,
+    formatVersion: FORMAT_VERSION,
+    appVersion: APP_VERSION,
+    savedAt,
+    font: { ...project.font },
+    defaults: { ...project.defaults, pen: { ...project.defaults.pen } },
+    queue: [...project.queue],
+    previewText: project.previewText,
+    glyphs: createdGlyphs(project).map((g) => ({
+      char: g.char,
+      codepoint: g.codepoint,
+      file: vectorPath(g.codepoint),
+    })),
+  };
+}
+
+export interface ArchiveInput {
+  project: Project;
+  savedAt: string;
+  /** 保存時点のフォント（グリフが 0 個なら null） */
+  ttf: ArrayBuffer | null;
+  otf: ArrayBuffer | null;
+  /** 文字 → 256×256 の PNG */
+  previews: ReadonlyMap<string, Uint8Array>;
+}
+
+/** zip を組み立てる（仕様 7.1） */
+export async function buildArchive(input: ArchiveInput): Promise<Uint8Array> {
+  const { project } = input;
+  const zip = new JSZip();
+  // フォルダーの項目（fontfile/ など）は作らない
+  const opts = { createFolders: false };
+  zip.file(PROJECT_JSON, JSON.stringify(toProjectJson(project, input.savedAt), null, 2), opts);
+  const name = project.font.familyName;
+  if (input.ttf) zip.file(`fontfile/${name}.ttf`, input.ttf, opts);
+  if (input.otf) zip.file(`fontfile/${name}.otf`, input.otf, opts);
+  for (const g of createdGlyphs(project)) {
+    zip.file(vectorPath(g.codepoint), JSON.stringify(g), opts);
+    const png = input.previews.get(g.char);
+    if (png) zip.file(previewPath(g.codepoint), png, opts);
+  }
+  return zip.generateAsync({
+    type: "uint8array",
+    compression: "DEFLATE",
+    compressionOptions: { level: 6 },
+  });
+}
+
+export class ArchiveError extends Error {}
+
+export interface ReadResult {
+  project: Project;
+  /** 読み込めなかった文字と理由 */
+  skipped: { char: string; reason: string }[];
+}
+
+/** 文字が 1 コードポイントで、取り込める文字か */
+const isValidChar = (c: string) =>
+  Array.from(c).length === 1 && parseInputChars(c).accepted[0] === c;
+
+function migrate(json: Record<string, unknown>): Record<string, unknown> {
+  let current = json;
+  let version = Number(current.formatVersion);
+  while (version < FORMAT_VERSION) {
+    const step = migrations[version];
+    if (!step) throw new ArchiveError(`formatVersion ${version} の読み込みには対応していません`);
+    current = { ...step(current), formatVersion: version + 1 };
+    version += 1;
+  }
+  return current;
+}
+
+/**
+ * zip を読み込んでプロジェクトを復元する（仕様 7.5）。
+ * 正はベクター JSON（zip の中のフォントと PNG は使わない）。壊れたベクター JSON はその文字だけ飛ばす
+ */
+export async function readArchive(
+  buffer: ArrayBuffer,
+  limits: { maxTotalBytes: number; maxFiles: number } = LIMITS,
+): Promise<ReadResult> {
+  let entries;
+  try {
+    entries = readZipEntries(buffer);
+  } catch (e) {
+    throw new ArchiveError(e instanceof Error ? e.message : "zip ファイルではありません");
+  }
+  if (entries.length > limits.maxFiles) {
+    throw new ArchiveError(
+      `ファイルが多すぎます（${entries.length} 個。上限 ${limits.maxFiles} 個）`,
+    );
+  }
+  const total = entries.reduce((n, e) => n + e.uncompressedSize, 0);
+  if (total > limits.maxTotalBytes) {
+    throw new ArchiveError(
+      `展開後のサイズが大きすぎます（上限 ${Math.round(limits.maxTotalBytes / 1024 / 1024)}MB）`,
+    );
+  }
+
+  let zip: JSZip;
+  try {
+    zip = await JSZip.loadAsync(buffer);
+  } catch {
+    throw new ArchiveError("zip ファイルが壊れています");
+  }
+
+  const projectFile = zip.file(PROJECT_JSON);
+  if (!projectFile)
+    throw new ArchiveError("このアプリで保存した zip ではありません（project.json がない）");
+  let raw: unknown;
+  try {
+    raw = JSON.parse(await projectFile.async("string"));
+  } catch {
+    throw new ArchiveError("project.json が壊れています");
+  }
+  if (typeof raw !== "object" || raw === null || (raw as { format?: unknown }).format !== FORMAT) {
+    throw new ArchiveError("このアプリで保存した zip ではありません");
+  }
+  const version = Number((raw as { formatVersion?: unknown }).formatVersion);
+  if (!Number.isInteger(version) || version < 1)
+    throw new ArchiveError("project.json の formatVersion が正しくありません");
+  if (version > FORMAT_VERSION) {
+    throw new ArchiveError(
+      "新しいバージョンのアプリで保存された zip です。ページを再読み込みしてから開いてください",
+    );
+  }
+  const parsed = projectJsonSchema.safeParse(migrate(raw as Record<string, unknown>));
+  if (!parsed.success)
+    throw new ArchiveError(
+      `project.json の内容が正しくありません（${parsed.error.issues[0]?.path.join(".")}）`,
+    );
+  const json = parsed.data;
+
+  const project = createEmptyProject();
+  project.font = {
+    familyName: sanitizeFamilyName(json.font.familyName) || DEFAULT_FAMILY_NAME,
+    familyNameJa: sanitizeDisplayName(json.font.familyNameJa),
+    designer: sanitizeDisplayName(json.font.designer),
+    exportCount: json.font.exportCount,
+  };
+  project.defaults = { ...json.defaults, pen: { ...json.defaults.pen } };
+  project.previewText = json.previewText;
+
+  const skipped: ReadResult["skipped"] = [];
+  const sizes = new Map(entries.map((e) => [e.name, e.uncompressedSize]));
+  for (const entry of json.glyphs) {
+    const fail = (reason: string) => skipped.push({ char: entry.char, reason });
+    const expectedChar = fromCodepointLabel(entry.codepoint);
+    // 想定外のパス（../ など）は読まない
+    if (
+      !VECTOR_PATH.test(entry.file) ||
+      entry.file !== vectorPath(entry.codepoint) ||
+      expectedChar !== entry.char
+    ) {
+      fail("ファイルの場所が正しくありません");
+      continue;
+    }
+    if (!isValidChar(entry.char)) {
+      fail("対応していない文字です");
+      continue;
+    }
+    const file = zip.file(entry.file);
+    if (!file || !sizes.has(entry.file)) {
+      fail("ベクターデータがありません");
+      continue;
+    }
+    try {
+      const vector = vectorSchema.safeParse(JSON.parse(await file.async("string")));
+      if (!vector.success) {
+        fail("ベクターデータの形式が正しくありません");
+        continue;
+      }
+      if (
+        vector.data.char !== entry.char ||
+        vector.data.codepoint !== toCodepointLabel(entry.char)
+      ) {
+        fail("ベクターデータの文字が一致しません");
+        continue;
+      }
+      project.glyphs[entry.char] = vector.data;
+    } catch {
+      fail("ベクターデータが壊れています");
+    }
+  }
+
+  // 一覧：project.json の queue（正しい文字だけ）に、読み込めたグリフを足す
+  const queue: string[] = [];
+  const seen = new Set<string>();
+  for (const c of [...json.queue, ...Object.keys(project.glyphs)]) {
+    if (seen.has(c) || !isValidChar(c)) continue;
+    seen.add(c);
+    queue.push(c);
+  }
+  project.queue = queue;
+  return { project, skipped };
+}

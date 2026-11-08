@@ -6,7 +6,9 @@ test("/healthz は ok を返す", async ({ request }) => {
   expect(await res.text()).toBe("ok");
 });
 
-test("画面のパスを直接開くと index.html を返す（SPA のフォールバック）", async ({ request }) => {
+test("画面のパスを直接開くと index.html を返す（SPA のフォールバック）", async ({
+  request,
+}) => {
   for (const path of ["/", "/editor", "/preview"]) {
     const res = await request.get(path);
     expect(res.status(), path).toBe(200);
@@ -28,13 +30,17 @@ test("セキュリティヘッダーを付ける", async ({ request }) => {
   expect(h["server"]).toBe("nginx");
 });
 
-test("ビルド成果物は長くキャッシュし、ないファイルは 404", async ({ request }) => {
+test("ビルド成果物は長くキャッシュし、ないファイルは 404", async ({
+  request,
+}) => {
   const html = await (await request.get("/")).text();
   const src = /src="(\/assets\/[^"]+\.js)"/.exec(html)?.[1];
   expect(src).toBeTruthy();
   const res = await request.get(src!);
   expect(res.status()).toBe(200);
   expect(res.headers()["cache-control"]).toContain("immutable");
-  expect(res.headers()["content-security-policy"]).toContain("default-src 'self'");
+  expect(res.headers()["content-security-policy"]).toContain(
+    "default-src 'self'",
+  );
   expect((await request.get("/assets/nothing.js")).status()).toBe(404);
 });

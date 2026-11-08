@@ -4,20 +4,13 @@ import { CharQueue } from "../components/CharQueue";
 import { DrawingCanvas } from "../components/DrawingCanvas";
 import { PenSettings } from "../components/PenSettings";
 import { isFullWidthChar } from "../lib/glyph/width";
-import {
-  PRESETS,
-  isCreated,
-  isoWithOffset,
-  nextUncreated,
-  parseInputChars,
-  prevChar,
-} from "../lib/project/chars";
+import { commitDraft } from "../app/glyphActions";
+import { PRESETS, isCreated, nextUncreated, parseInputChars, prevChar } from "../lib/project/chars";
 import { toCodepointLabel } from "../lib/project/project";
 import { canRedo, canUndo, isDirty } from "../lib/stroke/history";
 import { useEditorStore, useHistory, usePen } from "../store/editorStore";
 import { useProjectStore } from "../store/projectStore";
 import { askDialog, confirmDialog, notify } from "../store/uiStore";
-import type { GlyphData } from "../types/project";
 
 /** テキスト入力やダイアログにフォーカスがあるときは、ショートカットを使わない */
 function isTyping(target: EventTarget | null): boolean {
@@ -59,27 +52,11 @@ export function EditorPage() {
 
   /** 編集中の文字を保存する。advance なら次の未作成の文字へ進む */
   const save = (advance: boolean) => {
-    if (!char || history.strokes.length === 0) return;
-    const prev = glyphs[char];
-    const glyph: GlyphData = {
-      char,
-      codepoint: toCodepointLabel(char),
-      canvasSize: 1000,
-      widthMode: prev?.widthMode ?? "auto",
-      pen: { ...pen, simulatePressure: history.strokes[0]?.simulatePressure ?? false },
-      strokes: history.strokes,
-      updatedAt: isoWithOffset(),
-    };
-    const store = useProjectStore.getState();
-    store.saveGlyph(glyph);
-    editor.discard(char);
+    if (!char || !commitDraft(char)) return;
     if (advance) {
-      const next = nextUncreated(
-        store.project.queue,
-        useProjectStore.getState().project.glyphs,
-        char,
-      );
-      if (next) store.setCurrentChar(next);
+      const { project: p, setCurrentChar } = useProjectStore.getState();
+      const next = nextUncreated(p.queue, p.glyphs, char);
+      if (next) setCurrentChar(next);
     }
   };
 
