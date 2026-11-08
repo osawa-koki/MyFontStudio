@@ -1,12 +1,13 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { openZip } from "../features/archiveActions";
 import { createProjectInteractive } from "../features/projectActions";
 import { listStoredProjects } from "../features/projects";
 import { projectHref, type ProjectSummary } from "../lib/projects/repository";
 import { useProjectStore } from "../store/projectStore";
+import { useMenuButton } from "./useMenuButton";
 
 const ITEM =
   "flex w-full items-center gap-2 rounded px-3 py-2 text-left hover:bg-slate-100 focus-visible:bg-slate-100 focus-visible:outline-none";
@@ -20,47 +21,37 @@ export function ProjectSwitcher() {
   const pathname = usePathname();
   const projectId = useProjectStore((s) => s.projectId);
   const font = useProjectStore((s) => s.project.font);
-  const [open, setOpen] = useState(false);
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
-  const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // 切り替え先のページ：プレビューを見ているならプレビュー、それ以外は入力ページ
   const target = pathname.startsWith("/preview") ? "/preview" : "/editor";
 
-  // メニューの外のクリックと Esc で閉じる
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: PointerEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("pointerdown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("pointerdown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
+  const menu = useMenuButton(projects !== null);
+  const { open, rootRef, buttonRef, menuRef, onMenuKeyDown } = menu;
   const toggle = () => {
     if (!open) {
       setProjects(null);
       void listStoredProjects().then(setProjects);
     }
-    setOpen(!open);
+    menu.toggle();
+  };
+  const onButtonKeyDown = (e: React.KeyboardEvent) => {
+    if (!open && ["ArrowDown", "ArrowUp"].includes(e.key)) {
+      setProjects(null);
+      void listStoredProjects().then(setProjects);
+    }
+    menu.onButtonKeyDown(e);
   };
 
   const switchTo = async (id: string) => {
-    setOpen(false);
+    menu.close();
     if (id === projectId) return;
     router.push(projectHref(target, id));
   };
 
   const create = async () => {
-    setOpen(false);
+    menu.close();
     const id = await createProjectInteractive();
     if (id) router.push(projectHref("/editor", id));
   };
@@ -86,8 +77,10 @@ export function ProjectSwitcher() {
       <button
         type="button"
         className="flex max-w-[18rem] items-center gap-1 rounded-md border border-slate-300 bg-white px-2 py-1 font-bold hover:bg-slate-100"
+        ref={buttonRef}
         aria-haspopup="menu"
         aria-expanded={open}
+        onKeyDown={onButtonKeyDown}
         aria-label={`プロジェクト：${projectId ? font.familyName : "未選択"}（クリックで切り替え）`}
         onClick={toggle}
       >
@@ -104,7 +97,10 @@ export function ProjectSwitcher() {
 
       {open && (
         <div
+          ref={menuRef}
           role="menu"
+          tabIndex={-1}
+          onKeyDown={onMenuKeyDown}
           aria-label="プロジェクト"
           className="absolute left-1/2 z-50 mt-1 flex w-72 max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-col rounded-md border border-slate-200 bg-white p-1 text-sm shadow-lg"
         >
@@ -120,6 +116,7 @@ export function ProjectSwitcher() {
                   key={p.id}
                   type="button"
                   role="menuitemradio"
+                  tabIndex={-1}
                   aria-checked={p.id === projectId}
                   className={ITEM}
                   onClick={() => void switchTo(p.id)}
@@ -147,7 +144,13 @@ export function ProjectSwitcher() {
             )}
           </div>
           <hr className="my-1 border-slate-200" />
-          <button type="button" role="menuitem" className={ITEM} onClick={() => void create()}>
+          <button
+            type="button"
+            role="menuitem"
+            tabIndex={-1}
+            className={ITEM}
+            onClick={() => void create()}
+          >
             <span aria-hidden="true" className="w-4">
               ＋
             </span>
@@ -156,9 +159,10 @@ export function ProjectSwitcher() {
           <button
             type="button"
             role="menuitem"
+            tabIndex={-1}
             className={ITEM}
             onClick={() => {
-              setOpen(false);
+              menu.close();
               inputRef.current?.click();
             }}
           >
