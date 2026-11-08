@@ -6,7 +6,7 @@ import { expect, test } from "./fixtures";
 test("zip で保存 → リロード → zip を開くで、一覧・ストローク・設定・文章が復元される", async ({
   page,
 }) => {
-  await page.goto("/editor");
+  await page.goto("./editor");
   await page.getByLabel("追加する文字列").fill("口十未");
   await page.getByLabel("追加する文字列").press("ControlOrMeta+Enter");
   await drawStroke(page, [
@@ -36,9 +36,7 @@ test("zip で保存 → リロード → zip を開くで、一覧・ストロ�
   const downloading = page.waitForEvent("download");
   await page.getByRole("button", { name: "zip で保存" }).click();
   const download = await downloading;
-  expect(download.suggestedFilename()).toMatch(
-    /^MyHandwriting_\d{8}-\d{4}\.zip$/,
-  );
+  expect(download.suggestedFilename()).toMatch(/^MyHandwriting_\d{8}-\d{4}\.zip$/);
   await expect(page.getByText("未保存", { exact: true })).toBeHidden();
 
   const zipPath = await download.path();
@@ -61,57 +59,42 @@ test("zip で保存 → リロード → zip を開くで、一覧・ストロ�
   expect(json.previewText).toBe("口十未作成");
   const png = await zip.file("rawdata/preview/U+53E3.png")!.async("uint8array");
   expect([...png.slice(1, 4)]).toEqual([0x50, 0x4e, 0x47]); // "PNG"
-  const vector = JSON.parse(
-    await zip.file("rawdata/vector/U+5341.json")!.async("string"),
-  );
+  const vector = JSON.parse(await zip.file("rawdata/vector/U+5341.json")!.async("string"));
   expect(vector.strokes).toHaveLength(2);
   // 描いた履歴も入る
   expect(json.formatVersion).toBe(2);
-  const history = JSON.parse(
-    await zip.file("rawdata/history/U+5341.json")!.async("string"),
-  );
+  const history = JSON.parse(await zip.file("rawdata/history/U+5341.json")!.async("string"));
   expect(history.history.ops).toHaveLength(2);
 
   // 使い方ページ（プロジェクトを開いていない状態）から、zip を新しいプロジェクトとして開く
-  await page.goto("/");
+  await page.goto("./");
   await expect(page.getByLabel("登録済み文字数")).toHaveText("0 文字");
   await page.getByTestId("zip-input").setInputFiles(zipPath);
   await expect(page).toHaveURL(/\/editor\/\?uuid=[0-9a-f-]{36}$/);
-  await expect(
-    page.getByRole("region", { name: "文字一覧" }).getByRole("listitem"),
-  ).toHaveCount(3);
+  await expect(page.getByRole("region", { name: "文字一覧" }).getByRole("listitem")).toHaveCount(3);
   await expect(page.getByTestId("current-char")).toHaveText("未");
   await expect(page.getByLabel("登録済み文字数")).toHaveText("2 文字");
   await page
     .getByRole("region", { name: "文字一覧" })
     .getByRole("button", { name: /^十（/ })
     .click();
-  await expect(page.getByTestId("drawing-canvas")).toHaveAttribute(
-    "aria-label",
-    /ストローク 2 本/,
-  );
+  await expect(page.getByTestId("drawing-canvas")).toHaveAttribute("aria-label", /ストローク 2 本/);
   // zip から開き直しても、描いた履歴で元に戻せる
   await page.getByRole("button", { name: "元に戻す" }).click();
-  await expect(page.getByTestId("drawing-canvas")).toHaveAttribute(
-    "aria-label",
-    /ストローク 1 本/,
-  );
+  await expect(page.getByTestId("drawing-canvas")).toHaveAttribute("aria-label", /ストローク 1 本/);
   await page.getByRole("button", { name: "やり直し" }).click();
   await page
     .getByRole("navigation", { name: "ページ" })
     .getByRole("link", { name: "プレビュー" })
     .click();
   await expect(page.getByLabel("確かめたい文章")).toHaveValue("口十未作成");
-  await expect(page.getByTestId("preview-area")).toHaveCSS(
-    "font-family",
-    /hw-preview-\d+/,
-  );
+  await expect(page.getByTestId("preview-area")).toHaveCSS("font-family", /hw-preview-\d+/);
 });
 
 test.describe("壊れた zip・無関係な zip を開いても落ちない", () => {
   // エラーの通知は出すが、コンソールのエラーにはしない
   test("zip でないファイル", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("./");
     await page.getByTestId("zip-input").setInputFiles({
       name: "broken.zip",
       mimeType: "application/zip",
@@ -129,7 +112,7 @@ test.describe("壊れた zip・無関係な zip を開いても落ちない", ()
     const zip = new JSZip();
     zip.file("hello.txt", "hello");
     const buffer = Buffer.from(await zip.generateAsync({ type: "uint8array" }));
-    await page.goto("/");
+    await page.goto("./");
     await page.getByTestId("zip-input").setInputFiles({
       name: "other.zip",
       mimeType: "application/zip",
@@ -137,9 +120,7 @@ test.describe("壊れた zip・無関係な zip を開いても落ちない", ()
     });
     // Next.js のルートアナウンサーも role="alert" なので、文言で絞る
     await expect(
-      page
-        .getByRole("alert")
-        .filter({ hasText: "このアプリで保存した zip ではありません" }),
+      page.getByRole("alert").filter({ hasText: "このアプリで保存した zip ではありません" }),
     ).toBeVisible();
   });
 });

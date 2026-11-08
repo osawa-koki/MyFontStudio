@@ -4,7 +4,7 @@ import { expect, test } from "./fixtures";
 
 /** 入力ページで文字を追加し、それぞれ 1 本ずつ描いて保存する */
 async function createChars(page: Page, chars: string) {
-  await page.goto("/editor");
+  await page.goto("./editor");
   await page.getByLabel("追加する文字列").fill(chars);
   await page.getByLabel("追加する文字列").press("ControlOrMeta+Enter");
   for (let i = 0; i < Array.from(chars).length; i++) {
@@ -17,7 +17,7 @@ async function createChars(page: Page, chars: string) {
 }
 
 test("グリフがないときは入力ページへ案内する", async ({ page }) => {
-  await page.goto("/preview");
+  await page.goto("./preview");
   await expect(
     page.getByText("まだ文字がありません。入力ページで文字を作成してください"),
   ).toBeVisible();
@@ -42,12 +42,7 @@ test("保存した文字が手書きのフォントで表示され、未作成�
   const family = (await area.evaluate((el) => getComputedStyle(el).fontFamily))
     .split(",")[0]!
     .replaceAll('"', "");
-  expect(
-    await page.evaluate(
-      (f) => document.fonts.check(`24px "${f}"`, "大"),
-      family,
-    ),
-  ).toBe(true);
+  expect(await page.evaluate((f) => document.fonts.check(`24px "${f}"`, "大"), family)).toBe(true);
 
   await textarea.fill("大澤太郎\n大 澤");
   await expect(area.locator("[data-missing]")).toHaveText("太郎");
@@ -74,12 +69,8 @@ test("保存した文字が手書きのフォントで表示され、未作成�
   await page.getByRole("button", { name: ".otf をダウンロード" }).click();
   expect((await download).suggestedFilename()).toBe("MyHandwriting.otf");
 
-  await missing
-    .getByRole("button", { name: "入力ページに追加して描く" })
-    .click();
+  await missing.getByRole("button", { name: "入力ページに追加して描く" }).click();
   await expect(page).toHaveURL(/\/editor\/\?uuid=[0-9a-f-]{36}$/);
   await expect(page.getByTestId("current-char")).toHaveText("太");
-  await expect(
-    page.getByRole("region", { name: "文字一覧" }).getByRole("listitem"),
-  ).toHaveCount(4);
+  await expect(page.getByRole("region", { name: "文字一覧" }).getByRole("listitem")).toHaveCount(4);
 });

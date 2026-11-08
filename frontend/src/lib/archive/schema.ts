@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+// zod は速く検証するために new Function（eval）を使えるかを試す。CSP（script-src に 'unsafe-eval' を入れない）では
+// 止められ、Firefox ではコンソールのエラーになるので、使わない設定にする
+z.config({ jitless: true });
+
 export const FORMAT = "handwriting-font-project";
 /**
  * zip のデータ形式のバージョン。形式を変えたら上げて、migrations にマイグレーションを足す

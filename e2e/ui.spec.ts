@@ -2,7 +2,7 @@ import { drawStroke } from "./drawing";
 import { expect, test } from "./fixtures";
 
 test("使い方ページから入力ページ・プレビューに移動できる", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("./");
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   await page
     .getByRole("navigation", { name: "ページ" })
@@ -16,10 +16,8 @@ test("使い方ページから入力ページ・プレビューに移動でき�
   await expect(page).toHaveURL(/\/preview\/\?uuid=[0-9a-f-]{36}$/);
 });
 
-test("Canvas にマウスで描き、元に戻す・やり直し・クリアができる", async ({
-  page,
-}) => {
-  await page.goto("/editor");
+test("Canvas にマウスで描き、元に戻す・やり直し・クリアができる", async ({ page }) => {
+  await page.goto("./editor");
   await page.getByLabel("追加する文字列").fill("あ");
   await page.getByLabel("追加する文字列").press("ControlOrMeta+Enter");
   const canvas = page.getByTestId("drawing-canvas");
