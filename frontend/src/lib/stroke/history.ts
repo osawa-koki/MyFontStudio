@@ -23,9 +23,29 @@ export function strokesOf(h: DrawingHistory): Stroke[] {
   return strokes;
 }
 
-/** 操作を足す。やり直しできる操作（position より後ろ）は捨てる */
+/** 1 文字の操作の数の上限。超えたら古い操作を、その時点の線にまとめて HISTORY_KEEP_OPS 個に減らす */
+export const HISTORY_MAX_OPS = 5000;
+export const HISTORY_KEEP_OPS = 4000;
+
+/**
+ * 古い操作をまとめて、操作の数を減らす。まとめた時点の線は 1 本ずつ足した記録として残すので、元に戻すことはできる
+ * （まとめた時点より前のクリアの操作などは消える）
+ */
+export function compactHistory(h: DrawingHistory, keep = HISTORY_KEEP_OPS): DrawingHistory {
+  if (h.ops.length <= keep) return h;
+  const cut = h.ops.length - keep;
+  if (h.position < cut) return h;
+  const base = strokesOf({ ops: h.ops.slice(0, cut), position: cut });
+  return {
+    ops: [...base.map((stroke) => ({ type: "add" as const, stroke })), ...h.ops.slice(cut)],
+    position: h.position - cut + base.length,
+  };
+}
+
+/** 操作を足す。やり直しできる操作（position より後ろ）は捨てる。上限を超えたら古い操作をまとめる */
 function push(h: DrawingHistory, op: HistoryOp): DrawingHistory {
-  return { ops: [...h.ops.slice(0, h.position), op], position: h.position + 1 };
+  const next = { ops: [...h.ops.slice(0, h.position), op], position: h.position + 1 };
+  return next.ops.length > HISTORY_MAX_OPS ? compactHistory(next) : next;
 }
 
 export function addStroke(h: DrawingHistory, stroke: Stroke): DrawingHistory {

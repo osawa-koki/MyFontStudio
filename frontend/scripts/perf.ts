@@ -66,5 +66,49 @@ function measure(count: number, limitMs: number) {
   return ok;
 }
 
-const results = [measure(300, 500), measure(2000, 2000)];
+/** 1 本描いたときの保存（IndexedDB と同じく、書く値を structuredClone する保存先で測る） */
+async function measureSave(count: number, limitMs: number) {
+  const { saveProject } = await import("../src/lib/projects/repository");
+  const { addStroke, createHistory } = await import("../src/lib/stroke/history");
+  const data = new Map<string, unknown>();
+  const kv = {
+    get: async (k: string) => data.get(k),
+    getMany: async (ks: string[]) => ks.map((k) => data.get(k)),
+    set: async (k: string, v: unknown) => void data.set(k, structuredClone(v)),
+    setMany: async (e: [string, unknown][]) =>
+      e.forEach(([k, v]) => data.set(k, structuredClone(v))),
+    del: async (k: string) => void data.delete(k),
+    delMany: async (ks: string[]) => ks.forEach((k) => data.delete(k)),
+  };
+  const project = createEmptyProject();
+  for (let i = 0; i < count; i++) {
+    const char = String.fromCodePoint(0x4e00 + i);
+    project.queue.push(char);
+    project.glyphs[char] = dummyGlyph(char, i + 1);
+    project.drawings[char] = createHistory([
+      ...project.glyphs[char]!.strokes,
+      ...project.glyphs[char]!.strokes,
+    ]);
+  }
+  const id = "0b8e6c4e-2f1a-4c3b-9d5e-7a6b5c4d3e2f";
+  await saveProject(kv, id, project, false);
+  const c = String.fromCodePoint(0x4e00);
+  const next = {
+    ...project,
+    drawings: {
+      ...project.drawings,
+      [c]: addStroke(project.drawings[c]!, dummyGlyph(c, 7).strokes[0]!),
+    },
+  };
+  const t = performance.now();
+  await saveProject(kv, id, next, true, new Date(), project);
+  const ms = performance.now() - t;
+  const ok = ms <= limitMs;
+  console.log(
+    `${count} 文字：1 本描いたあとの保存 ${Math.round(ms)}ms（上限 ${limitMs}ms）${ok ? "OK" : "NG"}`,
+  );
+  return ok;
+}
+
+const results = [measure(300, 500), measure(2000, 2000), await measureSave(2000, 50)];
 if (results.includes(false)) process.exit(1);
