@@ -65,8 +65,15 @@ describe("editorStore", () => {
     expect(penFor(e(), "口").size).toBe(70);
   });
 
-  it("ignoreTouch", () => {
-    e().setIgnoreTouch(true);
+  it("ペンを検出したら指の入力を無視する。利用者が切り替えたあとは変えない", () => {
+    useEditorStore.setState({ ignoreTouch: false, ignoreTouchChosen: false });
+    expect(e().penDetected()).toBe(true);
     expect(e().ignoreTouch).toBe(true);
+    // すでに ON なら知らせない
+    expect(e().penDetected()).toBe(false);
+    e().setIgnoreTouch(false);
+    expect(e().ignoreTouchChosen).toBe(true);
+    expect(e().penDetected()).toBe(false);
+    expect(e().ignoreTouch).toBe(false);
   });
 });

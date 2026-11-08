@@ -208,3 +208,42 @@ test("文字一覧を並び替え・検索・絞り込みできる", async ({ pa
   await expect(region.getByRole("listitem")).toHaveCount(6);
   await expect(page.getByLabel("文字一覧を検索")).toHaveValue("");
 });
+
+test("ペンを検出すると指の入力を無視する。自分で OFF にしたら、ペンで描いても ON に戻らない", async ({ page }) => {
+  await page.goto("/editor");
+  await page.getByLabel("追加する文字列").fill("あ");
+  await page.getByLabel("追加する文字列").press("ControlOrMeta+Enter");
+  const canvas = page.getByTestId("drawing-canvas");
+  const box = (await canvas.boundingBox())!;
+  const pen = async (y: number) => {
+    const at = (x: number) => ({
+      pointerType: "pen",
+      pointerId: 7,
+      isPrimary: true,
+      pressure: 0.6,
+      button: 0,
+      buttons: 1,
+      clientX: box.x + box.width * x,
+      clientY: box.y + box.height * y,
+      bubbles: true,
+    });
+    await canvas.dispatchEvent("pointerdown", at(0.2));
+    await canvas.dispatchEvent("pointermove", at(0.5));
+    await canvas.dispatchEvent("pointermove", at(0.8));
+    await canvas.dispatchEvent("pointerup", at(0.8));
+  };
+  const ignoreTouch = page.getByLabel("指の入力を無視");
+  await expect(ignoreTouch).not.toBeChecked();
+  await pen(0.3);
+  await expect(canvas).toHaveAttribute("aria-label", /ストローク 1 本/);
+  await expect(ignoreTouch).toBeChecked();
+  await expect(page.getByRole("status").filter({ hasText: "ペンを検出したので" })).toBeVisible();
+
+  await ignoreTouch.uncheck();
+  await pen(0.6);
+  await expect(canvas).toHaveAttribute("aria-label", /ストローク 2 本/);
+  await expect(ignoreTouch).not.toBeChecked();
+  // 選んだ値はブラウザに覚えておく
+  await page.reload();
+  await expect(page.getByLabel("指の入力を無視")).not.toBeChecked();
+});

@@ -248,7 +248,13 @@ export function EditorPage() {
             halfWidth={!isFullWidthChar(char)}
             ignoreTouch={editor.ignoreTouch}
             onStroke={(s) => editor.commitStroke(char, s)}
-            onPenDetected={() => editor.setIgnoreTouch(true)}
+            onPenDetected={() => {
+              if (editor.penDetected()) {
+                notify(
+                  "ペンを検出したので、指の入力を無視します（ペン設定の「指の入力を無視」で変えられます）",
+                );
+              }
+            }}
           />
           <div className="flex flex-wrap justify-center gap-2">
             <button
