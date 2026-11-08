@@ -2,8 +2,16 @@
 
 自分の手書き文字から、PC にインストールして Word などで使えるフォント（.ttf / .otf）を作る Web アプリ。すべての処理をブラウザの中で行い、サーバー・アカウント・外部への送信はない（静的サイト）。仕様は [docs/SPEC.md](docs/SPEC.md)、使い方と構成は [README.md](README.md) を参照。
 
-- `frontend/`：Vite + React + TypeScript の画面（SPA）。コードはすべてここにある
+- `frontend/`：Vite + React + TypeScript（strict）+ Tailwind CSS の画面（SPA）。コードはすべてここにある
+  - `src/lib/`：ロジック（純粋な関数。React に依存させない。テストはここに書く）
+    - `project/`：プロジェクトの初期値・名前の直し方・コードポイントの表記
+  - `src/store/`：zustand のストア（`projectStore`：プロジェクトの状態、`uiStore`：通知・確認ダイアログ）
+  - `src/types/project.ts`：プロジェクト・グリフの型（zip の JSON と同じ形）
+  - `src/pages/`・`src/components/`：画面
+  - `src/router.tsx`：ルーティング。`VITE_ROUTER=hash` なら HashRouter（GitHub Pages）、それ以外は BrowserRouter
 - `docs/SPEC.md`：仕様書。仕様を変えたら、本文と「12. 仕様の修正履歴」を直す
+- Node.js のバージョンは `frontend/.node-version` で固定している
+- TypeScript は 6.0 系にとどめている（typescript-eslint が 7 に対応していないため。Dependabot でも上げない）
 
 ## 開発フロー
 
@@ -32,6 +40,29 @@
    - マージ後は `main` の CI・デプロイの結果を確認する。
 
 PR は役割ごとに分ける。前の PR に依存する場合は、マージ後の `main` から次のブランチを切る。
+
+## 検証コマンド
+
+```bash
+# 画面（frontend/ で）
+npm run typecheck
+npm run lint            # ESLint と Prettier（直すときは npm run format）
+npm run test:coverage   # 単体テストとカバレッジの下限（vite.config.ts の coverage.thresholds）
+npm run build
+npm run dev             # 開発サーバー
+```
+
+## CI（GitHub Actions）
+
+| ワークフロー | トリガー | 内容 |
+|---|---|---|
+| `frontend-ci.yml` | すべての PR | 型チェック、ESLint・Prettier、単体テストとカバレッジ（`lib/`・`store/` の行の 85% が下限）、ビルド（BrowserRouter と HashRouter の 2 通り） |
+| `audit.yml` | `frontend/package*.json` を変えた PR、週 1 回（月曜 3:30 JST）、手動 | `npm audit --omit=dev --audit-level=high`（画面に入る依存。開発用を含む結果はサマリーに出すだけ） |
+
+- actions は、すべてコミットの SHA で固定し、行の終わりにバージョンを書く（例：`uses: actions/checkout@<40 文字の SHA> # v7.0.1`）。SHA は `gh api repos/<owner>/<repo>/commits/<タグ> --jq .sha` で調べる。
+- ワークフローを変えたら actionlint で確認する（`docker run --rm -v "$PWD:/repo:ro" -w /repo rhysd/actionlint:1.7.7 -no-color`）。
+- すべてのジョブに `timeout-minutes` を付ける。
+- Dependabot（`.github/dependabot.yml`）は github-actions・npm（`frontend/`）を週 1 回更新する。minor・patch はエコシステムごとに 1 つの PR にまとめる。
 
 ## 設計上の約束ごと
 

@@ -1,0 +1,47 @@
+name: audit
+
+# 依存（npm のパッケージ）の既知の脆弱性を調べる
+on:
+  pull_request:
+    paths:
+      - "frontend/package.json"
+      - "frontend/package-lock.json"
+      - ".github/workflows/audit.yml"
+  # 依存を変えていなくても、新しく見つかった脆弱性に気づけるように、週 1 回調べる（月曜 3:30 JST）
+  schedule:
+    - cron: "30 18 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: audit-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  npm:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: ./frontend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: frontend/.node-version
+      # 開発用（vite・vitest など）の脆弱性は、配信する画面に入らないので、表示だけにする
+      - name: npm audit (all, report only)
+        run: |
+          {
+            echo '### npm audit（開発用を含む。失敗にはしない）'
+            echo '```'
+            npm audit || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      # 画面に入る依存（dependencies）に HIGH 以上の脆弱性があれば失敗にする
+      - name: npm audit (runtime)
+        run: npm audit --omit=dev --audit-level=high

@@ -1,0 +1,21 @@
+version: 2
+# 週 1 回、エコシステムごとに minor・patch を 1 つの PR にまとめる（major は 1 件ずつ PR にする）
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      github-actions:
+        update-types: ["minor", "patch"]
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+    groups:
+      frontend:
+        update-types: ["minor", "patch"]
+    ignore:
+      # typescript-eslint が TypeScript 7 に対応するまで 6.0 系にとどめる
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
