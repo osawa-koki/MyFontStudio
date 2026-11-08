@@ -12,6 +12,12 @@ RUN npm run build \
 # ---- 実行（Nginx で静的ファイルを配信） ----
 # root でない Nginx（uid 101）。ダイジェストで固定する（新しいイメージが出ると Dependabot が更新の PR を出す）
 FROM nginxinc/nginx-unprivileged:1.31-alpine@sha256:b5047b9b76845eac124358373c6852377c52e4b05834a47647e955dd91cb8f1e AS runtime
+# Alpine のセキュリティ更新を入れる（ベースイメージの更新を待たずに、修正済みの脆弱性を直す）。
+# publish.yml はこのステージをキャッシュを使わずに作るので、作り直すたびに最新の更新が入る
+USER root
+RUN apk upgrade --no-cache
+# 非 root の Nginx（uid 101）に戻す
+USER 101
 # 待ち受けるポート。Render は PORT を環境変数で渡す。起動時に templates/ の ${PORT} が置き換わる
 ENV PORT=8080
 COPY nginx/default.conf.template /etc/nginx/templates/default.conf.template
