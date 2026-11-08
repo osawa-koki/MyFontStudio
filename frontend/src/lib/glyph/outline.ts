@@ -171,6 +171,11 @@ export function glyphToOutline(glyph: GlyphData): GlyphOutline {
 
 const outlineCache = new WeakMap<GlyphData, GlyphOutline>();
 
+/** キャッシュにあれば輪郭を返す（なければ計算せずに undefined） */
+export function peekGlyphOutline(glyph: GlyphData): GlyphOutline | undefined {
+  return outlineCache.get(glyph);
+}
+
 /** glyphToOutline の結果をグリフのオブジェクトごとにキャッシュする（保存のたびにオブジェクトが変わる） */
 export function getGlyphOutline(glyph: GlyphData): GlyphOutline {
   let outline = outlineCache.get(glyph);

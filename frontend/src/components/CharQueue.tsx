@@ -142,7 +142,8 @@ export function CharQueue({ queue, glyphs, current, onSelect, onDelete }: Props)
             const done = isCreated(glyphs, c);
             const isCurrent = c === current;
             return (
-              <li key={c}>
+              // 見えていないボタンは描画を省く（何千文字あっても重くならないように）
+              <li key={c} className="[contain-intrinsic-size:auto_3rem] [content-visibility:auto]">
                 <button
                   type="button"
                   className={`flex h-12 min-w-12 items-center justify-center gap-1 rounded-md border px-1.5 text-lg ${
