@@ -47,6 +47,8 @@ test("セキュリティヘッダーを付ける", async ({ request }) => {
   expect(h["x-content-type-options"]).toBe("nosniff");
   expect(h["referrer-policy"]).toBe("no-referrer");
   expect(h["x-frame-options"]).toBe("DENY");
+  expect(h["strict-transport-security"]).toBe("max-age=31536000");
+  expect(h["cross-origin-resource-policy"]).toBe("same-origin");
   expect(h["server"]).toBe("nginx");
 });
 

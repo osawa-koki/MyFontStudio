@@ -26,6 +26,9 @@ server {
     add_header X-Frame-Options "DENY" always;
     add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
     add_header Cross-Origin-Opener-Policy "same-origin" always;
+    add_header Cross-Origin-Resource-Policy "same-origin" always;
+    # Render は HTTPS で配信する。HTTP で来たら HTTPS に切り替えるようブラウザに覚えさせる
+    add_header Strict-Transport-Security "max-age=31536000" always;
     # location の add_header（Cache-Control）を足しても、上のヘッダーを引き継ぐ
     add_header_inherit merge;
 
