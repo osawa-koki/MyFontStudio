@@ -1,18 +1,22 @@
-import { useRef } from "react";
 import { downloadFont } from "../features/actions";
 import { useFontStore } from "../store/fontStore";
+import { useMenuButton } from "./useMenuButton";
+
+const ITEM =
+  "rounded px-3 py-2 text-left hover:bg-slate-100 focus-visible:bg-slate-100 focus-visible:outline-none";
 
 /** ヘッダーの「フォントをダウンロード」（.ttf / .otf を選ぶ。既定は .ttf） */
 export function FontDownloadMenu() {
   const outlineCount = useFontStore((s) => s.outlineCount);
-  const ref = useRef<HTMLDetailsElement>(null);
+  const { open, toggle, close, rootRef, buttonRef, menuRef, onButtonKeyDown, onMenuKeyDown } =
+    useMenuButton();
   const disabled = outlineCount === 0;
   const pick = (format: "ttf" | "otf") => {
-    if (ref.current) ref.current.open = false;
+    close();
     void downloadFont(format);
   };
   return (
-    <div className="flex">
+    <div ref={rootRef} className="relative flex">
       <button
         type="button"
         className="btn btn-primary rounded-r-none"
@@ -22,31 +26,48 @@ export function FontDownloadMenu() {
       >
         フォントをダウンロード（.ttf）
       </button>
-      <details ref={ref} className="relative">
-        <summary
-          className={`btn btn-primary list-none rounded-l-none border-l-blue-500 px-2 ${disabled ? "pointer-events-none opacity-50" : ""}`}
-          aria-label="形式を選ぶ"
-          aria-disabled={disabled}
+      <button
+        type="button"
+        className="btn btn-primary rounded-l-none border-l-blue-500 px-2"
+        aria-label="形式を選んでダウンロード"
+        disabled={disabled}
+        ref={buttonRef}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onKeyDown={onButtonKeyDown}
+        onClick={toggle}
+      >
+        ▾
+      </button>
+      {open && (
+        <div
+          ref={menuRef}
+          role="menu"
+          tabIndex={-1}
+          onKeyDown={onMenuKeyDown}
+          aria-label="ダウンロードする形式"
+          className="absolute top-full right-0 z-50 mt-1 flex w-56 flex-col rounded-md border border-slate-200 bg-white p-1 text-sm shadow-lg"
         >
-          ▾
-        </summary>
-        <div className="absolute right-0 z-50 mt-1 flex w-56 flex-col rounded-md border border-slate-200 bg-white p-1 text-sm shadow-lg">
           <button
             type="button"
-            className="rounded px-3 py-2 text-left hover:bg-slate-100"
+            role="menuitem"
+            tabIndex={-1}
+            className={ITEM}
             onClick={() => pick("ttf")}
           >
             .ttf（Word 向け・推奨）
           </button>
           <button
             type="button"
-            className="rounded px-3 py-2 text-left hover:bg-slate-100"
+            role="menuitem"
+            tabIndex={-1}
+            className={ITEM}
             onClick={() => pick("otf")}
           >
             .otf
           </button>
         </div>
-      </details>
+      )}
     </div>
   );
 }

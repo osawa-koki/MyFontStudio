@@ -208,3 +208,72 @@ test("ヘッダーのメニューから、新しいプロジェクトの作成�
   await switcher.click();
   await expect(menu.getByRole("menuitemradio")).toHaveCount(3);
 });
+
+test("プロジェクトの切り替えメニューとダウンロードのメニューを、キーボードだけで操作できる", async ({
+  page,
+}) => {
+  for (const name of ["Alpha", "Beta"]) {
+    await page.goto("/");
+    await page.getByRole("button", { name: "新しくはじめる" }).click();
+    await page.getByRole("dialog").getByLabel("フォント名").fill(name);
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "はじめる" })
+      .click();
+    await expect(page).toHaveURL(UUID_URL);
+  }
+  await addAndDraw(page, "乙");
+  const switcher = page.getByRole("button", { name: /^プロジェクト：/ });
+  const menu = page.getByRole("menu", { name: "プロジェクト" });
+
+  // Enter で開くと最初の項目（Beta）にフォーカス。↓ で Alpha、Enter で切り替え
+  await switcher.focus();
+  await page.keyboard.press("Enter");
+  await expect(menu.getByRole("menuitemradio", { name: /Beta/ })).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(
+    menu.getByRole("menuitemradio", { name: /Alpha/ }),
+  ).toBeFocused();
+  // End で最後の項目、Home で最初の項目、↑ で端から折り返す
+  await page.keyboard.press("End");
+  await expect(
+    menu.getByRole("menuitem", { name: /ZIP を読み込む/ }),
+  ).toBeFocused();
+  await page.keyboard.press("Home");
+  await expect(menu.getByRole("menuitemradio", { name: /Beta/ })).toBeFocused();
+  await page.keyboard.press("ArrowUp");
+  await expect(
+    menu.getByRole("menuitem", { name: /ZIP を読み込む/ }),
+  ).toBeFocused();
+  // Esc で閉じてボタンに戻る
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+  await expect(switcher).toBeFocused();
+  // ↓ で開いて（一覧を読み込んで最初の項目にフォーカスが移ってから）Alpha を選ぶ
+  await page.keyboard.press("ArrowDown");
+  await expect(menu.getByRole("menuitemradio", { name: /Beta/ })).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  await expect(switcher).toHaveAccessibleName(/プロジェクト：Alpha/);
+
+  // ダウンロードのメニュー：↑ で開くと最後の項目（.otf）
+  await switcher.click();
+  await menu.getByRole("menuitemradio", { name: /Beta/ }).click();
+  const formatButton = page.getByRole("button", {
+    name: "形式を選んでダウンロード",
+  });
+  await expect(formatButton).toBeEnabled();
+  await formatButton.focus();
+  await page.keyboard.press("ArrowUp");
+  await expect(
+    page
+      .getByRole("menu", { name: "ダウンロードする形式" })
+      .getByRole("menuitem", { name: ".otf" }),
+  ).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(formatButton).toBeFocused();
+  const downloading = page.waitForEvent("download");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  expect((await downloading).suggestedFilename()).toBe("Beta.ttf");
+});
