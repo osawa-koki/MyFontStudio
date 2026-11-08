@@ -45,7 +45,7 @@ test("保存した文字が手書きのフォントで表示され、未作成�
   expect(await page.evaluate((f) => document.fonts.check(`24px "${f}"`, "大"), family)).toBe(true);
 
   await textarea.fill("大澤太郎\n大 澤");
-  await expect(area.locator("[data-missing]")).toHaveText("太郎");
+  await expect(area.locator("[data-missing]")).toHaveText(["太郎"]);
   const missing = page.getByRole("region", { name: "未作成の文字" });
   await expect(missing).toContainText("2 文字");
 

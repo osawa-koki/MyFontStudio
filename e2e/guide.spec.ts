@@ -83,7 +83,10 @@ test("描いた線は描いた履歴として残り、再読み込みしても�
   await expect(canvas).toHaveAttribute("aria-label", /ストローク 2 本/);
 });
 
-test("このブラウザへの保存の状態（永続化・使用量）を表示し、永続化を頼める", async ({ page }) => {
+test("このブラウザへの保存の状態（永続化・使用量）を表示し、永続化を頼める", async ({
+  page,
+  browserName,
+}) => {
   await page.goto("./");
   const status = page.getByTestId("storage-status");
   await expect(status).toContainText("使用量");
@@ -91,8 +94,11 @@ test("このブラウザへの保存の状態（永続化・使用量）を表�
   const button = status.getByRole("button", {
     name: "データを消されないようにする",
   });
-  // ブラウザが永続化を許すかは環境による。許されていなければボタンを押して結果を知らせる
-  if (await button.isVisible()) {
+  // ブラウザが永続化を許すかは環境による。許されていなければボタンを押して結果を知らせる。
+  // Firefox は許可の確認を出して利用者の答えを待つ（自動テストでは答えが返らない）ので、ボタンが出ていることだけ確かめる
+  if (browserName === "firefox") {
+    await expect(button.or(status.getByText("自動では消されません"))).toBeVisible();
+  } else if (await button.isVisible()) {
     await button.click();
     await expect(
       page.getByRole("status").filter({ hasText: /設定しました|許可されませんでした/ }),
