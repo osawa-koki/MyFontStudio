@@ -108,3 +108,97 @@ test("uuid の形が正しくなければ案内する", async ({ page }) => {
     "手書きフォントを作ろう",
   );
 });
+
+test("ヘッダーのメニューから、新しいプロジェクトの作成・切り替え・ZIP の読み込みができる", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const switcher = page.getByRole("button", { name: /^プロジェクト：/ });
+  await expect(switcher).toHaveAccessibleName(
+    "プロジェクト：未選択（クリックで切り替え）",
+  );
+
+  // 新しいプロジェクト（1 つ目）
+  await switcher.click();
+  await expect(page.getByRole("menu", { name: "プロジェクト" })).toContainText(
+    "まだプロジェクトがありません",
+  );
+  await page
+    .getByRole("menuitem", { name: "新しいプロジェクト", exact: true })
+    .click();
+  await page.getByRole("dialog").getByLabel("フォント名").fill("Alpha");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "はじめる" })
+    .click();
+  await expect(page).toHaveURL(UUID_URL);
+  const alpha = uuidOf(page);
+  await addAndDraw(page, "甲");
+
+  // 新しいプロジェクト（2 つ目）
+  await switcher.click();
+  await page
+    .getByRole("menuitem", { name: "新しいプロジェクト", exact: true })
+    .click();
+  await page.getByRole("dialog").getByLabel("フォント名").fill("Beta");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "はじめる" })
+    .click();
+  await expect(switcher).toHaveAccessibleName(/プロジェクト：Beta/);
+  await addAndDraw(page, "乙丙");
+
+  // 描きかけがあると、切り替える前に確かめる
+  await drawStroke(page, [
+    [300, 300],
+    [700, 700],
+  ]);
+  await switcher.click();
+  const menu = page.getByRole("menu", { name: "プロジェクト" });
+  await expect(menu.getByRole("menuitemradio")).toHaveCount(2);
+  await expect(
+    menu.getByRole("menuitemradio", { name: /Beta/ }),
+  ).toHaveAttribute("aria-checked", "true");
+  await menu.getByRole("menuitemradio", { name: /Alpha/ }).click();
+  const confirm = page.getByRole("dialog", {
+    name: "描きかけの文字があります",
+  });
+  await confirm.getByRole("button", { name: "キャンセル" }).click();
+  await expect(switcher).toHaveAccessibleName(/プロジェクト：Beta/);
+  await switcher.click();
+  await menu.getByRole("menuitemradio", { name: /Alpha/ }).click();
+  await confirm.getByRole("button", { name: "切り替える" }).click();
+  await expect(page).toHaveURL(new RegExp(`uuid=${alpha}$`));
+  await expect(switcher).toHaveAccessibleName(/プロジェクト：Alpha/);
+  await expect(
+    page.getByRole("region", { name: "文字一覧" }).getByRole("listitem"),
+  ).toHaveCount(1);
+
+  // プレビューで切り替えると、プレビューのまま
+  await page
+    .getByRole("navigation", { name: "ページ" })
+    .getByRole("link", { name: "プレビュー" })
+    .click();
+  await switcher.click();
+  await menu.getByRole("menuitemradio", { name: /Beta/ }).click();
+  await expect(page).toHaveURL(/\/preview\/\?uuid=[0-9a-f-]{36}$/);
+  await expect(switcher).toHaveAccessibleName(/プロジェクト：Beta/);
+
+  // Esc でメニューを閉じる
+  await switcher.click();
+  await expect(menu).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+
+  // ZIP を読み込む：Beta を zip に保存して、新しいプロジェクトとして読み込む
+  const downloading = page.waitForEvent("download");
+  await page.getByRole("button", { name: "zip で保存" }).click();
+  const zipPath = await (await downloading).path();
+  await switcher.click();
+  const choosing = page.waitForEvent("filechooser");
+  await page.getByRole("menuitem", { name: /ZIP を読み込む/ }).click();
+  await (await choosing).setFiles(zipPath);
+  await expect(page).toHaveURL(UUID_URL);
+  await switcher.click();
+  await expect(menu.getByRole("menuitemradio")).toHaveCount(3);
+});

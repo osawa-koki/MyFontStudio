@@ -7,6 +7,7 @@ import { projectHref } from "../lib/projects/repository";
 import { useProjectStore } from "../store/projectStore";
 import { FontDownloadMenu } from "./FontDownloadMenu";
 import { FontSettingsButton } from "./FontSettingsButton";
+import { ProjectSwitcher } from "./ProjectSwitcher";
 import { ZipButtons } from "./ZipButtons";
 
 const NAV = [
@@ -48,7 +49,8 @@ export function Header() {
         </div>
 
         <div className="flex flex-1 items-center justify-center gap-2 text-sm">
-          <FontSettingsButton />
+          <ProjectSwitcher />
+          {projectId && <FontSettingsButton />}
           <span className="text-slate-500" aria-label="登録済み文字数">
             {glyphCount} 文字
           </span>

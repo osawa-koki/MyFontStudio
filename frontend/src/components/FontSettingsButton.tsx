@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { FAMILY_NAME_MAX, sanitizeFamilyName } from "../lib/project/project";
 import { useProjectStore } from "../store/projectStore";
 
-/** ヘッダーのフォント名。クリックで名前などの設定を編集する */
+/** ヘッダーの「編集」。フォント名・日本語名・作者を編集する */
 export function FontSettingsButton() {
   const font = useProjectStore((s) => s.project.font);
   const setFontSettings = useProjectStore((s) => s.setFontSettings);
@@ -20,15 +20,12 @@ export function FontSettingsButton() {
     <>
       <button
         type="button"
-        className="max-w-[16rem] truncate rounded-md px-2 py-1 font-bold hover:bg-slate-100"
-        title="フォント名を編集"
+        className="rounded-md px-2 py-1 text-slate-600 hover:bg-slate-100"
+        title="フォント名・日本語名・作者を編集"
         aria-label={`フォント名：${font.familyName}（クリックで編集）`}
         onClick={open}
       >
-        {font.familyName}
-        {font.familyNameJa && (
-          <span className="ml-1 font-normal text-slate-500">（{font.familyNameJa}）</span>
-        )}
+        編集
       </button>
       <dialog
         ref={ref}

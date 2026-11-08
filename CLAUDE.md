@@ -112,5 +112,6 @@ docker rm -f app
 - **同じ入力から同じフォント**：ストローク → グリフの変換（`lib/glyph`）は決定的な純粋関数にする。zip から復元したときも同じ処理でフォントを作り直す。復元の正はベクター JSON（zip の中の .ttf / .otf・PNG は読み込みに使わない）。
 - **.ttf と .otf は同じ中間データから作る**：`GlyphOutline` と `FontSpec` を受け取り ArrayBuffer を返す。形式ごとの違いはアダプタ（`lib/font/ttf.ts`・`lib/font/otf.ts`）に閉じ込める。名前・メトリクス・OS/2 の値は、ライブラリで書き出したあとに `lib/font/sfnt.ts` でテーブルを差し替えて、両形式でそろえる（仕様 6.4）。
 - **座標**：Canvas とストロークは 0〜1000 の em 座標（y 下向き）。フォント座標は `fontX = x`、`fontY = 880 - y`（y 上向き、ベースライン 0）。
+- **プロジェクトの切り替え**：ヘッダーの `ProjectSwitcher`（一覧・新しいプロジェクト・ZIP の読み込み）と使い方ページの `GuideActions` は、`features/projectActions.ts`（`createProjectInteractive`・`confirmLeaveDrafts`）を共通に使う。描きかけのストロークがあれば切り替える前に確かめる。
 - **プロジェクトは UUID で管理する**：開いているプロジェクトの ID はストアの `projectId`。入力・プレビューへのリンクと移動には `projectHref()` で `?uuid=` を付ける。zip を開くと新しい UUID のプロジェクトになる（開いているものを上書きしない）。
 - **zip のデータ形式**（`project.json`・ベクター JSON）を変えるときは `formatVersion` を上げ、古い形式のマイグレーションを書く。
