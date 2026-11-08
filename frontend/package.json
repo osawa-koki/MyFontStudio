@@ -16,6 +16,7 @@
   "dependencies": {
     "fonteditor-core": "^2.6.3",
     "get-east-asian-width": "^1.7.0",
+    "idb-keyval": "^6.3.0",
     "jszip": "^3.10.2",
     "next": "^16.4.5",
     "opentype.js": "^2.0.0",
