@@ -25,7 +25,8 @@ export interface ProjectState {
   removeChar(char: string): void;
   saveGlyph(glyph: GlyphData): void;
   setCurrentChar(char: string | null): void;
-  setPreviewText(text: string): void;
+  /** 文章を変える。dirty: false なら未保存にしない（初期値を入れるとき） */
+  setPreviewText(text: string, options?: { dirty?: boolean }): void;
   /** 書き出し回数を 1 加算し、新しい値を返す */
   incrementExportCount(): number;
   markSaved(): void;
@@ -124,8 +125,11 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     set({ currentChar: char });
   },
 
-  setPreviewText(text) {
-    set((s) => ({ project: { ...s.project, previewText: text }, dirty: true }));
+  setPreviewText(text, options) {
+    set((s) => ({
+      project: { ...s.project, previewText: text },
+      dirty: (options?.dirty ?? true) || s.dirty,
+    }));
   },
 
   incrementExportCount() {
