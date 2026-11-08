@@ -11,7 +11,7 @@ test("「大澤太郎」を入力すると 4 文字が並び、描いて保存�
 }) => {
   await page.goto("/editor");
   await page.getByLabel("追加する文字列").fill("大澤太郎");
-  await page.getByLabel("追加する文字列").press("Enter");
+  await page.getByLabel("追加する文字列").press("ControlOrMeta+Enter");
   const list = page.getByRole("region", { name: "文字一覧" });
   await expect(list.getByRole("listitem")).toHaveCount(4);
   await expect(page.getByTestId("current-char")).toHaveText("大");
@@ -81,6 +81,22 @@ test("未保存のストロークがあるときに移動すると確かめる�
   await expect(
     page.getByRole("region", { name: "文字一覧" }).getByRole("listitem"),
   ).toHaveCount(1);
+});
+
+test("文字列入力欄は複数行で入力でき、Enter は改行、Ctrl/Cmd+Enter と「追加」で追加する", async ({ page }) => {
+  await page.goto("/editor");
+  const input = page.getByLabel("追加する文字列");
+  await input.fill("大澤");
+  await input.press("Enter");
+  await input.pressSequentially("太郎");
+  await expect(input).toHaveValue("大澤\n太郎");
+  await expect(page.getByRole("region", { name: "文字一覧" }).getByRole("listitem")).toHaveCount(0);
+  await page.getByRole("button", { name: "追加", exact: true }).click();
+  await expect(page.getByRole("region", { name: "文字一覧" }).getByRole("listitem")).toHaveCount(4);
+  await expect(input).toHaveValue("");
+  await input.fill("東京\n都");
+  await input.press("ControlOrMeta+Enter");
+  await expect(page.getByRole("region", { name: "文字一覧" }).getByRole("listitem")).toHaveCount(7);
 });
 
 test("プリセットで文字群を追加でき、← → で移動できる", async ({ page }) => {

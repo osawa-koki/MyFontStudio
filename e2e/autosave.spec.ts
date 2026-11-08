@@ -4,7 +4,7 @@ import { expect, test } from "./fixtures";
 test("リロードしても、自動保存から作業を復元できる", async ({ page }) => {
   await page.goto("/editor");
   await page.getByLabel("追加する文字列").fill("大澤");
-  await page.getByLabel("追加する文字列").press("Enter");
+  await page.getByLabel("追加する文字列").press("ControlOrMeta+Enter");
   await drawStroke(page, [
     [200, 500],
     [800, 500],

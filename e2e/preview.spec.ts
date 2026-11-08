@@ -6,7 +6,7 @@ import { expect, test } from "./fixtures";
 async function createChars(page: Page, chars: string) {
   await page.goto("/editor");
   await page.getByLabel("追加する文字列").fill(chars);
-  await page.getByLabel("追加する文字列").press("Enter");
+  await page.getByLabel("追加する文字列").press("ControlOrMeta+Enter");
   for (let i = 0; i < Array.from(chars).length; i++) {
     await drawStroke(page, [
       [200, 300 + i * 50],
