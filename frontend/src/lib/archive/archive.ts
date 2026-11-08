@@ -23,7 +23,13 @@ import { readZipEntries } from "./zipinfo";
 export const APP_VERSION = "0.1.0";
 
 /** 不正な zip の対策：展開後の合計サイズとファイル数の上限（仕様 7.5） */
-export const LIMITS = { maxTotalBytes: 200 * 1024 * 1024, maxFiles: 20_000 };
+export const LIMITS = {
+  maxTotalBytes: 200 * 1024 * 1024,
+  maxFiles: 20_000,
+  /** 1 ファイル（project.json・ベクター JSON・描いた履歴）の展開後の上限 */
+  maxFileBytes: 32 * 1024 * 1024,
+};
+export type ArchiveLimits = typeof LIMITS;
 
 export const PROJECT_JSON = "project.json";
 export const vectorPath = (codepoint: string) => `rawdata/vector/${codepoint}.json`;
@@ -123,6 +129,60 @@ export async function buildArchive(input: ArchiveInput): Promise<Uint8Array> {
 
 export class ArchiveError extends Error {}
 
+/** JSZip の StreamHelper（使う部分だけ） */
+interface ZipStream {
+  on(event: "data", cb: (chunk: Uint8Array) => void): ZipStream;
+  on(event: "error", cb: (e: Error) => void): ZipStream;
+  on(event: "end", cb: () => void): ZipStream;
+  pause(): ZipStream;
+  resume(): ZipStream;
+}
+
+/**
+ * zip の中のファイルを、実際に展開した大きさを数えながら文字列として読む。
+ * zip に書かれた展開後のサイズ（中央ディレクトリの値）は偽れるので信用せず、上限を超えたら展開を止める
+ */
+function readText(
+  file: JSZip.JSZipObject,
+  limits: ArchiveLimits,
+  budget: { used: number },
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    // internalStream は JSZip の型定義にないが、少しずつ展開するための公開の API（StreamHelper）
+    const stream = (
+      file as unknown as { internalStream(type: "uint8array"): ZipStream }
+    ).internalStream("uint8array");
+    stream
+      .on("data", (chunk: Uint8Array) => {
+        size += chunk.length;
+        budget.used += chunk.length;
+        if (size > limits.maxFileBytes || budget.used > limits.maxTotalBytes) {
+          stream.pause();
+          reject(
+            new ArchiveError(
+              `展開後のサイズが大きすぎます（1 ファイル ${Math.round(limits.maxFileBytes / 1024 / 1024)}MB・合計 ${Math.round(limits.maxTotalBytes / 1024 / 1024)}MB まで）`,
+            ),
+          );
+          return;
+        }
+        chunks.push(chunk);
+      })
+      .on("error", (e: Error) => reject(e))
+      .on("end", () => {
+        const all = new Uint8Array(size);
+        let p = 0;
+        for (const c of chunks) {
+          all.set(c, p);
+          p += c.length;
+        }
+        resolve(new TextDecoder().decode(all));
+      })
+      .resume();
+  });
+}
+
 export interface ReadResult {
   project: Project;
   /** 読み込めなかった文字と理由 */
@@ -151,7 +211,7 @@ function migrate(json: Record<string, unknown>): Record<string, unknown> {
  */
 export async function readArchive(
   buffer: ArrayBuffer,
-  limits: { maxTotalBytes: number; maxFiles: number } = LIMITS,
+  limits: ArchiveLimits = LIMITS,
 ): Promise<ReadResult> {
   let entries;
   try {
@@ -181,10 +241,12 @@ export async function readArchive(
   const projectFile = zip.file(PROJECT_JSON);
   if (!projectFile)
     throw new ArchiveError("このアプリで保存した zip ではありません（project.json がない）");
+  const budget = { used: 0 };
   let raw: unknown;
   try {
-    raw = JSON.parse(await projectFile.async("string"));
-  } catch {
+    raw = JSON.parse(await readText(projectFile, limits, budget));
+  } catch (e) {
+    if (e instanceof ArchiveError) throw e;
     throw new ArchiveError("project.json が壊れています");
   }
   if (typeof raw !== "object" || raw === null || (raw as { format?: unknown }).format !== FORMAT) {
@@ -239,7 +301,7 @@ export async function readArchive(
       continue;
     }
     try {
-      const vector = vectorSchema.safeParse(JSON.parse(await file.async("string")));
+      const vector = vectorSchema.safeParse(JSON.parse(await readText(file, limits, budget)));
       if (!vector.success) {
         fail("ベクターデータの形式が正しくありません");
         continue;
@@ -252,7 +314,8 @@ export async function readArchive(
         continue;
       }
       project.glyphs[entry.char] = vector.data;
-    } catch {
+    } catch (e) {
+      if (e instanceof ArchiveError) throw e;
       fail("ベクターデータが壊れています");
     }
   }
@@ -275,13 +338,14 @@ export async function readArchive(
       continue;
     }
     try {
-      const parsed = historyFileSchema.safeParse(JSON.parse(await file.async("string")));
+      const parsed = historyFileSchema.safeParse(JSON.parse(await readText(file, limits, budget)));
       if (!parsed.success || parsed.data.char !== entry.char) {
         fail("描いた履歴の形式が正しくありません（字形は読み込みました）");
         continue;
       }
       project.drawings[entry.char] = parsed.data.history;
-    } catch {
+    } catch (e) {
+      if (e instanceof ArchiveError) throw e;
       fail("描いた履歴が壊れています（字形は読み込みました）");
     }
   }
