@@ -8,6 +8,7 @@ export function ZipButtons() {
     <button
       type="button"
       className="btn"
+      title="Ctrl/⌘+Shift+S"
       disabled={busy}
       onClick={() => {
         setBusy(true);

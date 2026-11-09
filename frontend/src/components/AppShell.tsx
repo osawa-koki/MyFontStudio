@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { useProjectPersistence } from "../features/projects";
 import { useFontPreview } from "../features/fontPreview";
+import { useSaveShortcut } from "../features/saveShortcut";
 import { useUnsavedWarning } from "../features/unsavedWarning";
 import { useZipDrop } from "../features/zipDrop";
 import { DialogHost } from "./DialogHost";
@@ -15,6 +16,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   useFontPreview();
   useProjectPersistence();
   useUnsavedWarning();
+  useSaveShortcut();
   useZipDrop();
   return (
     <div className="flex min-h-screen flex-col">

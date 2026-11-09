@@ -3,7 +3,7 @@ import { collectOutlinesAsync } from "../lib/font/outlines";
 import { registerPreviewFont, unregisterPreviewFont } from "../lib/font/fontface";
 import { useFontStore } from "../store/fontStore";
 import { useProjectStore } from "../store/projectStore";
-import { TaskCancelledError, runInWorker } from "./worker";
+import { TaskCancelledError, isUnloading, runInWorker } from "./worker";
 
 /** グリフを保存・削除してから、フォントを作り直すまでの待ち時間 */
 export const REBUILD_DELAY_MS = 300;
@@ -44,7 +44,9 @@ export async function rebuildPreviewFont(): Promise<void> {
   } catch (e) {
     // zip の保存などを取り消して Worker を止めたときは、この生成も止まるので、やり直す（新しい生成が始まっていなければ）
     if (e instanceof TaskCancelledError) {
-      if (my === generation) window.setTimeout(() => void rebuildPreviewFont(), 0);
+      // ページを離れる途中なら、やり直さない（やり直しても中断されるだけ）
+      if (my === generation && !isUnloading())
+        window.setTimeout(() => void rebuildPreviewFont(), 0);
       return;
     }
     console.error("フォントの生成に失敗しました", e);

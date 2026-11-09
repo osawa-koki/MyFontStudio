@@ -223,3 +223,35 @@ test("ペンを検出すると指の入力を無視する。自分で OFF にし
   await page.reload();
   await expect(page.getByLabel("指の入力を無視")).not.toBeChecked();
 });
+
+test("Ctrl/Cmd+S で文字を保存し、Ctrl/Cmd+Shift+S で zip に保存する（ブラウザのページの保存は出さない）", async ({
+  page,
+}) => {
+  await page.goto("./editor");
+  const input = page.getByLabel("追加する文字列");
+  await input.fill("あい");
+  await input.press("ControlOrMeta+Enter");
+  await drawStroke(page, [
+    [200, 500],
+    [800, 500],
+  ]);
+  // テキスト入力にフォーカスがあっても効く
+  await input.focus();
+  await page.keyboard.press("ControlOrMeta+s");
+  await expect(page.getByTestId("current-char")).toHaveText("い");
+  await expect(page.getByLabel("登録済み文字数")).toHaveText("1 文字");
+
+  let downloading = page.waitForEvent("download");
+  await page.keyboard.press("ControlOrMeta+Shift+s");
+  expect((await downloading).suggestedFilename()).toMatch(/^MyHandwriting_\d{8}-\d{4}\.zip$/);
+
+  // 入力ページ以外では Ctrl/Cmd+S も zip で保存
+  await page
+    .getByRole("navigation", { name: "ページ" })
+    .getByRole("link", { name: "プレビュー" })
+    .click();
+  await expect(page).toHaveURL(/\/preview\//);
+  downloading = page.waitForEvent("download");
+  await page.keyboard.press("ControlOrMeta+s");
+  expect((await downloading).suggestedFilename()).toMatch(/\.zip$/);
+});

@@ -26,6 +26,9 @@ if (typeof window !== "undefined") {
   window.addEventListener("pageshow", () => (unloading = false));
 }
 
+/** ページを離れる途中か（このあいだは Worker を作らない。作っても読み込みが中断されるだけ） */
+export const isUnloading = () => unloading;
+
 let worker: Worker | null = null;
 let nextId = 1;
 const pending = new Map<
@@ -57,6 +60,8 @@ function getWorker(): Worker | null {
       }
     };
     worker.onerror = (e) => {
+      // ここで処理するので、ページの未処理の例外にしない（WebKit は preventDefault しないとページの例外として出す）
+      e.preventDefault();
       // Worker が壊れたら、待っている処理をすべて失敗にして、次は作り直す
       for (const p of pending.values()) {
         p.reject(
@@ -98,6 +103,8 @@ export async function runInWorker<T extends Task>(
     ? (p: { label: string; done: number; total: number }) => useTaskStore.getState().update(id, p)
     : undefined;
   try {
+    // ページを離れる途中は、新しい処理を始めない（Worker の読み込みが中断され、やり直しを繰り返すことになる）
+    if (unloading) throw new TaskCancelledError();
     const w = getWorker();
     if (!w) {
       // Worker が使えないときだけ読み込む（JSZip・fonteditor-core・opentype.js を画面のバンドルに入れない）
