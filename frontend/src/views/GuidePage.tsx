@@ -59,6 +59,10 @@ export function GuidePage() {
           </li>
           <li>住所・氏名・学校名など、履歴書で使う文字から作ると早く使えるようになります。</li>
           <li>英数字（半角）は、描いた幅に合わせて詰めて並びます。漢字・かなは等幅です。</li>
+          <li>
+            キーボードでも操作できます：Enter・Ctrl/⌘+S で保存、← → で前・次の文字、Ctrl/⌘+Z
+            で元に戻す、Ctrl/⌘+Shift+S で zip に保存。
+          </li>
         </ul>
       </Section>
 

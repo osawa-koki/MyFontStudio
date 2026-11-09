@@ -7,6 +7,7 @@ import { DrawingCanvas } from "../components/DrawingCanvas";
 import { PenSettings } from "../components/PenSettings";
 import { isFullWidthChar } from "../lib/glyph/width";
 import { commitDraft } from "../features/glyphActions";
+import { saveShortcut } from "../lib/shortcuts";
 import { PRESETS, isCreated, nextUncreated, parseInputChars, prevChar } from "../lib/project/chars";
 import { toCodepointLabel } from "../lib/project/project";
 import { projectHref } from "../lib/projects/repository";
@@ -126,9 +127,15 @@ export function EditorPage() {
     useProjectStore.getState().removeChar(c);
   };
 
-  // ショートカット：Enter 保存、← 前へ、→ スキップ、Ctrl/Cmd+Z 元に戻す、Ctrl/Cmd+Shift+Z やり直し
+  // ショートカット：Enter・Ctrl/Cmd+S 保存、← 前へ、→ スキップ、Ctrl/Cmd+Z 元に戻す、Ctrl/Cmd+Shift+Z やり直し
+  // （Ctrl/Cmd+Shift+S の zip で保存と、ブラウザの「ページを保存」を止めるのは useSaveShortcut）
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Ctrl/Cmd+S はテキスト入力中も効かせる（テキストの編集と重ならないため）
+      if (saveShortcut(e) === "save") {
+        if (char && !document.querySelector("dialog[open]")) save(true);
+        return;
+      }
       if (!char || isTyping(e.target) || e.isComposing) return;
       const mod = e.ctrlKey || e.metaKey;
       if (mod && e.key.toLowerCase() === "z") {
@@ -306,7 +313,7 @@ export function EditorPage() {
               className="btn btn-primary min-w-24"
               disabled={strokes.length === 0}
               onClick={() => save(true)}
-              title="Enter"
+              title="Enter・Ctrl/⌘+S"
             >
               保存
             </button>
