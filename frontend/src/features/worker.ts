@@ -11,6 +11,21 @@ export class TaskCancelledError extends Error {
   }
 }
 
+/** Worker が壊れた（読み込めなかった・処理の途中で落ちた） */
+export class WorkerCrashedError extends Error {}
+
+/**
+ * ページを離れる途中か。再読み込み・移動の途中で Worker のファイルの読み込みが中断されると Worker のエラーになるが、
+ * そのときは「取り消し」として扱う（エラーとして出さない）
+ */
+let unloading = false;
+if (typeof window !== "undefined") {
+  // WebKit は pagehide より前（移動を始めた時点）に Worker の読み込みを中断するので、beforeunload でも印を付ける
+  window.addEventListener("beforeunload", () => (unloading = true));
+  window.addEventListener("pagehide", () => (unloading = true));
+  window.addEventListener("pageshow", () => (unloading = false));
+}
+
 let worker: Worker | null = null;
 let nextId = 1;
 const pending = new Map<
@@ -43,8 +58,13 @@ function getWorker(): Worker | null {
     };
     worker.onerror = (e) => {
       // Worker が壊れたら、待っている処理をすべて失敗にして、次は作り直す
-      for (const p of pending.values())
-        p.reject(new Error(e.message || "Web Worker でエラーが起きました"));
+      for (const p of pending.values()) {
+        p.reject(
+          unloading
+            ? new TaskCancelledError()
+            : new WorkerCrashedError(e.message || "Web Worker でエラーが起きました"),
+        );
+      }
       pending.clear();
       worker?.terminate();
       worker = null;
@@ -87,10 +107,19 @@ export async function runInWorker<T extends Task>(
         renderPng: typeof document !== "undefined" ? renderGlyphPng : undefined,
       });
     }
-    return await new Promise<TaskResult<T>>((resolve, reject) => {
-      pending.set(id, { resolve: resolve as (v: unknown) => void, reject, onProgress });
-      w.postMessage({ id, task } satisfies WorkerRequest, options.transfer ?? []);
-    });
+    const send = (target: Worker) =>
+      new Promise<TaskResult<T>>((resolve, reject) => {
+        pending.set(id, { resolve: resolve as (v: unknown) => void, reject, onProgress });
+        target.postMessage({ id, task } satisfies WorkerRequest, options.transfer ?? []);
+      });
+    try {
+      return await send(w);
+    } catch (e) {
+      // Worker が壊れたら、作り直して 1 回だけやり直す（渡したバッファは移していて送り直せないので、そのときはやり直さない）
+      const retry = getWorker();
+      if (!(e instanceof WorkerCrashedError) || options.transfer?.length || !retry) throw e;
+      return await send(retry);
+    }
   } finally {
     if (options.label && useTaskStore.getState().task?.id === id) useTaskStore.getState().set(null);
   }

@@ -17,6 +17,7 @@ import {
   type ProjectSummary,
 } from "../lib/projects/repository";
 import { requestPersistence } from "../lib/projects/storage";
+import { saveTiming } from "../lib/projects/saving";
 import { useEditorStore } from "../store/editorStore";
 import { canEditInThisTab } from "../store/tabLockStore";
 import { withStorageLock } from "./tabLock";
@@ -124,27 +125,14 @@ export function useProjectPersistence(): void {
       if (id) stored.add(id);
     }, false);
     const unsubscribe = useProjectStore.subscribe((state, prev) => {
-      if (!state.projectId) return;
-      // ほかのタブで編集しているプロジェクトは保存しない（古い内容で上書きしないように）
-      if (!canEditInThisTab()) return;
-      // 切り替えただけ（読み込んだ直後）は保存しない
-      if (state.projectId !== prev.projectId) return;
-      const p = state.project;
-      const q = prev.project;
-      if (p === q && state.dirty === prev.dirty) return;
-      // 文字の追加・グリフの保存・描いた線・設定の変更はすぐに保存する（すぐにリロードされても消えないように）。
-      // 頻繁に変わる文章（プレビューの textarea）などは 500ms 待ってまとめて保存する
-      if (
-        p.queue !== q.queue ||
-        p.glyphs !== q.glyphs ||
-        p.drawings !== q.drawings ||
-        p.font !== q.font ||
-        p.defaults !== q.defaults
-      ) {
+      // いつ保存するかは lib/projects/saving.ts（ほかのタブで編集しているプロジェクトは、古い内容で上書きしないよう保存しない）
+      const timing = saveTiming(state, prev, canEditInThisTab());
+      if (timing === "none" || !state.projectId) return;
+      if (timing === "now") {
         saveLater.cancel();
-        void save(state.projectId, p, state.dirty);
+        void save(state.projectId, state.project, state.dirty);
       } else {
-        saveLater(state.projectId, p, state.dirty);
+        saveLater(state.projectId, state.project, state.dirty);
       }
     });
     const onHide = () => saveLater.flush();
