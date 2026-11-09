@@ -31,13 +31,13 @@ test("zip で保存 → リロード → zip を開くで、一覧・ストロ�
     .getByRole("link", { name: "プレビュー" })
     .click();
   await page.getByLabel("確かめたい文章").fill("口十未作成");
-  await expect(page.getByText("未保存", { exact: true })).toBeVisible();
+  await expect(page.getByText("zip 未保存", { exact: true })).toBeVisible();
 
   const downloading = page.waitForEvent("download");
   await page.getByRole("button", { name: "zip で保存" }).click();
   const download = await downloading;
   expect(download.suggestedFilename()).toMatch(/^MyHandwriting_\d{8}-\d{4}\.zip$/);
-  await expect(page.getByText("未保存", { exact: true })).toBeHidden();
+  await expect(page.getByText("zip 未保存", { exact: true })).toBeHidden();
 
   const zipPath = await download.path();
   const zip = await JSZip.loadAsync(await readFile(zipPath));

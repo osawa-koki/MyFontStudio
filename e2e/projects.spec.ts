@@ -37,7 +37,7 @@ test("uuid のない URL を開くと新しいプロジェクトの uuid が付�
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page).toHaveURL(new RegExp(`uuid=${id}$`));
   await expect(page.getByLabel("登録済み文字数")).toHaveText("1 文字");
-  await expect(page.getByText("未保存", { exact: true })).toBeVisible();
+  await expect(page.getByText("zip 未保存", { exact: true })).toBeVisible();
   await expect(page.getByTestId("current-char")).toHaveText("澤");
   // プレビューへのリンクにも uuid が付く
   await page
@@ -88,6 +88,18 @@ test("複数のプロジェクトを持ち、一覧から開いたり削除し�
   await page.getByRole("dialog").getByRole("button", { name: "削除" }).click();
   await expect(page.getByRole("link", { name: /を開く$/ })).toHaveCount(1);
   await expect(page.getByRole("link", { name: "First を開く" })).toBeVisible();
+});
+
+test("このブラウザに保存されていない uuid を開くと、新しいプロジェクトとして始めることを知らせる", async ({
+  page,
+}) => {
+  await page.goto("./editor/?uuid=0b8e6c4e-2f1a-4c3b-9d5e-7a6b5c4d3e2f");
+  await expect(
+    page
+      .getByRole("status")
+      .filter({ hasText: "このブラウザに保存されていないので、新しいプロジェクトとして始めます" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("登録済み文字数")).toHaveText("0 文字");
 });
 
 test("uuid の形が正しくなければ案内する", async ({ page }) => {

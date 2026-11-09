@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { collectOutlinesAsync } from "../lib/font/outlines";
 import { registerPreviewFont, unregisterPreviewFont } from "../lib/font/fontface";
 import { useFontStore } from "../store/fontStore";
@@ -56,8 +56,16 @@ export async function rebuildPreviewFont(): Promise<void> {
 export function useFontPreview(): void {
   const glyphs = useProjectStore((s) => s.project.glyphs);
   const familyName = useProjectStore((s) => s.project.font.familyName);
+  const projectId = useProjectStore((s) => s.projectId);
+  const lastProject = useRef(projectId);
   useEffect(() => {
-    const timer = window.setTimeout(() => void rebuildPreviewFont(), REBUILD_DELAY_MS);
+    // プロジェクトを切り替えたときは待たずに作り直す（前のプロジェクトのフォントが残らないように）
+    const switched = lastProject.current !== projectId;
+    lastProject.current = projectId;
+    const timer = window.setTimeout(
+      () => void rebuildPreviewFont(),
+      switched ? 0 : REBUILD_DELAY_MS,
+    );
     return () => window.clearTimeout(timer);
-  }, [glyphs, familyName]);
+  }, [glyphs, familyName, projectId]);
 }
