@@ -19,10 +19,10 @@ const releaseTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const RELEASE_DELAY_MS = 1000;
 let channel: BroadcastChannel | null = null;
 
-const supported = () =>
-  typeof navigator !== "undefined" &&
-  "locks" in navigator &&
-  typeof BroadcastChannel !== "undefined";
+/** Web Locks API があるか（HTTPS でないページなどでは navigator.locks がない・null のことがある） */
+const hasLocks = () =>
+  typeof navigator !== "undefined" && typeof navigator.locks?.request === "function";
+const supported = () => hasLocks() && typeof BroadcastChannel !== "undefined";
 
 /** ロックを取る。waitIfHeld なら空くまで待つ。取れたら true */
 function lock(id: string, waitIfHeld: boolean): Promise<boolean> {
@@ -120,6 +120,6 @@ function scheduleRelease(id: string): void {
 
 /** 書き込みをタブをまたいで順番に行う（一覧の読み書きが、ほかのタブの書き込みと混ざらないように） */
 export function withStorageLock<T>(op: () => Promise<T>): Promise<T> {
-  if (typeof navigator === "undefined" || !("locks" in navigator)) return op();
+  if (!hasLocks()) return op();
   return navigator.locks.request("myfontstudio:storage", op) as Promise<T>;
 }

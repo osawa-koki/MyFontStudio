@@ -5,10 +5,15 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["src/**/*.test.ts"],
-    // カバレッジは純粋な関数（lib・store・Worker の処理の本体）だけを数える。画面（app・views・components・features）は E2E で確かめる
+    // カバレッジは純粋な関数（lib・store・Worker の処理の本体）と、プロジェクトの保存・読み込み（features/projects.ts）を数える。画面（app・views・components・features）は E2E で確かめる
     coverage: {
       provider: "v8",
-      include: ["src/lib/**/*.ts", "src/store/**/*.ts", "src/workers/tasks.ts"],
+      include: [
+        "src/lib/**/*.ts",
+        "src/store/**/*.ts",
+        "src/workers/tasks.ts",
+        "src/features/projects.ts",
+      ],
       // png.ts は Canvas（OffscreenCanvas）で描くので、ブラウザ（E2E）で確かめる
       exclude: ["src/**/*.test.ts", "src/lib/glyph/png.ts"],
       reporter: ["text", "json-summary"],
