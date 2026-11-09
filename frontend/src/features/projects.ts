@@ -18,6 +18,8 @@ import {
 } from "../lib/projects/repository";
 import { requestPersistence } from "../lib/projects/storage";
 import { useEditorStore } from "../store/editorStore";
+import { canEditInThisTab } from "../store/tabLockStore";
+import { withStorageLock } from "./tabLock";
 import { useProjectStore } from "../store/projectStore";
 import type { Project } from "../types/project";
 
@@ -37,7 +39,8 @@ let pendingWrites = 0;
 function enqueue(op: () => Promise<void>, track = true): Promise<void> {
   if (track) pendingWrites++;
   writes = writes
-    .then(op)
+    // タブをまたいで順番に書く（一覧の読み書きが、ほかのタブの書き込みと混ざらないように）
+    .then(() => withStorageLock(op))
     .catch((e) => console.warn("プロジェクトの保存に失敗しました", e))
     .finally(() => {
       if (track) pendingWrites--;
@@ -121,6 +124,8 @@ export function useProjectPersistence(): void {
     }, false);
     const unsubscribe = useProjectStore.subscribe((state, prev) => {
       if (!state.projectId) return;
+      // ほかのタブで編集しているプロジェクトは保存しない（古い内容で上書きしないように）
+      if (!canEditInThisTab()) return;
       // 切り替えただけ（読み込んだ直後）は保存しない
       if (state.projectId !== prev.projectId) return;
       const p = state.project;
@@ -206,6 +211,16 @@ export function useProjectFromUrl(): ProjectUrlState {
 
   if (uuid && (!isProjectId(uuid) || failed === uuid)) return "invalid";
   return uuid && uuid === projectId ? "ready" : "loading";
+}
+
+/** 保存されている最新の内容でプロジェクトを開き直す（ほかのタブから編集を引き継いだとき） */
+export async function reloadProject(id: string): Promise<void> {
+  await flushProjectSave();
+  const loaded = await loadProject(idb, id);
+  if (!loaded) return;
+  stored.add(id);
+  lastSaved.set(id, loaded.project);
+  openLoaded(loaded.project, id, loaded.dirty);
 }
 
 /** zip から読み込んだプロジェクトを、新しい ID のプロジェクトとして開いて保存する */

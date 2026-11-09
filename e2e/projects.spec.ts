@@ -240,3 +240,44 @@ test("プロジェクトの切り替えメニューとダウンロードのメ�
   await page.keyboard.press("Enter");
   expect((await downloading).suggestedFilename()).toBe("Beta.ttf");
 });
+
+test("同じプロジェクトを 2 つのタブで開くと、編集できるのは 1 つだけで、引き継ぐと最新の内容を読み直す", async ({
+  page,
+  context,
+}) => {
+  await page.goto("./editor");
+  await expect(page).toHaveURL(UUID_URL);
+  const url = page.url();
+  await addAndDraw(page, "甲乙");
+
+  // 2 つ目のタブで同じプロジェクトを開くと、編集できない
+  const second = await context.newPage();
+  await second.goto(url);
+  await expect(
+    second.getByRole("heading", {
+      name: "このプロジェクトはほかのタブで開いています",
+    }),
+  ).toBeVisible();
+  await expect(second.getByTestId("drawing-canvas")).toHaveCount(0);
+
+  // 引き継ぐと、1 つ目のタブは編集を止め、2 つ目のタブは 1 つ目で保存した内容を読み直す
+  await second.getByRole("button", { name: "このタブで編集する" }).click();
+  await expect(second.getByLabel("登録済み文字数")).toHaveText("1 文字");
+  await expect(second.getByTestId("current-char")).toHaveText("乙");
+  await expect(
+    page.getByRole("heading", {
+      name: "ほかのタブでこのプロジェクトを開いたので、このタブでは編集を止めました",
+    }),
+  ).toBeVisible();
+
+  // 2 つ目のタブで描いて保存し、1 つ目のタブで引き継ぎ直すと、その内容が見える
+  await addAndDraw(second, "丙");
+  await page.getByRole("button", { name: "このタブで編集する" }).click();
+  await expect(page.getByLabel("登録済み文字数")).toHaveText("2 文字");
+  await expect(
+    second.getByRole("heading", {
+      name: "ほかのタブでこのプロジェクトを開いたので、このタブでは編集を止めました",
+    }),
+  ).toBeVisible();
+  await second.close();
+});
