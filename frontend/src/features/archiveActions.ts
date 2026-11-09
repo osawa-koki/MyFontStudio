@@ -44,7 +44,11 @@ export async function saveZip(): Promise<void> {
       archiveFileName(project.font.familyName, now),
     );
     useProjectStore.getState().markSaved();
-    notify("zip に保存しました", "success");
+    // ブラウザの保存のダイアログで取り消されても、ページからは分からない（<a download> では検出できない）
+    notify(
+      "zip をダウンロードしました（保存を取り消したときは、もう一度「zip で保存」してください）",
+      "success",
+    );
   } catch (e) {
     if (e instanceof TaskCancelledError) {
       notify("zip の保存を取り消しました");

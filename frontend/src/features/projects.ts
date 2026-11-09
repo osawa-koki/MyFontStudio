@@ -21,6 +21,7 @@ import { useEditorStore } from "../store/editorStore";
 import { canEditInThisTab } from "../store/tabLockStore";
 import { withStorageLock } from "./tabLock";
 import { useProjectStore } from "../store/projectStore";
+import { notify } from "../store/uiStore";
 import type { Project } from "../types/project";
 
 /** IndexedDB（idb-keyval）。プライベートブラウズなどで使えないときは保存に失敗する（警告だけ出す） */
@@ -199,6 +200,10 @@ export function useProjectFromUrl(): ProjectUrlState {
         } else {
           useEditorStore.getState().reset();
           useProjectStore.getState().newProject(undefined, uuid);
+          // 削除したプロジェクトのブックマークを開いたときなど。黙って空のプロジェクトにしない
+          notify(
+            "このプロジェクトはこのブラウザに保存されていないので、新しいプロジェクトとして始めます",
+          );
         }
       })
       .catch(() => {

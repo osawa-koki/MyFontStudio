@@ -57,9 +57,9 @@ export function Header() {
           {dirty && (
             <span
               className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800"
-              title="zip に保存していない変更があります"
+              title="ブラウザには自動で保存しています。zip に書き出していない変更があります（ほかの PC に移すときやバックアップには「zip で保存」）"
             >
-              未保存
+              zip 未保存
             </span>
           )}
         </div>

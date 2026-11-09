@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { openZip } from "../features/archiveActions";
 import { createProjectInteractive } from "../features/projectActions";
 import { deleteStoredProject, listStoredProjects } from "../features/projects";
+import { distinguishingId } from "../lib/projects/display";
 import { projectHref, type ProjectSummary } from "../lib/projects/repository";
 import { useProjectStore } from "../store/projectStore";
 import { confirmDialog, notify } from "../store/uiStore";
@@ -93,6 +94,11 @@ export function GuideActions() {
                     {p.familyName}
                     {p.familyNameJa && (
                       <span className="ml-1 font-normal text-slate-500">（{p.familyNameJa}）</span>
+                    )}
+                    {distinguishingId(p, projects) && (
+                      <span className="ml-1 font-mono text-xs font-normal text-slate-400">
+                        {distinguishingId(p, projects)}
+                      </span>
                     )}
                     {p.id === currentId && (
                       <span className="ml-2 text-xs text-blue-700">開いています</span>
