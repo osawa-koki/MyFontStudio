@@ -11,8 +11,24 @@ import { unsavedDraftChars } from "./unsavedWarning";
 /** 読み込める zip の大きさの上限（圧縮後） */
 const MAX_ZIP_BYTES = 200 * 1024 * 1024;
 
-/** 「zip で保存」（仕様 7.4）。描きかけの文字があれば、先に保存するか確かめる */
+/** zip の保存が動いているか（ボタンとショートカットから重ねて動かさない） */
+let savingZip = false;
+
+/** 「zip で保存」（仕様 7.4）。描きかけの文字があれば、先に保存するか確かめる。保存の途中なら何もしない */
 export async function saveZip(): Promise<void> {
+  if (savingZip) {
+    notify("zip に保存しています。終わるまでお待ちください");
+    return;
+  }
+  savingZip = true;
+  try {
+    await saveZipOnce();
+  } finally {
+    savingZip = false;
+  }
+}
+
+async function saveZipOnce(): Promise<void> {
   const drafts = unsavedDraftChars();
   if (drafts.length > 0) {
     const { value } = await askDialog({
@@ -29,9 +45,9 @@ export async function saveZip(): Promise<void> {
     if (value === "save") drafts.forEach(commitDraft);
   }
 
-  const store = useProjectStore.getState();
-  const exportCount = store.incrementExportCount();
-  const project = useProjectStore.getState().project;
+  // zip に入れるのは、この時点の内容。書き出し回数は保存できてから加算する
+  const { project, revision } = useProjectStore.getState();
+  const exportCount = project.font.exportCount + 1;
   try {
     // 輪郭・フォント・PNG・圧縮は Web Worker で行い、進み具合を出す
     const now = new Date();
@@ -43,7 +59,10 @@ export async function saveZip(): Promise<void> {
       new Blob([zip as BlobPart], { type: "application/zip" }),
       archiveFileName(project.font.familyName, now),
     );
-    useProjectStore.getState().markSaved();
+    const store = useProjectStore.getState();
+    store.recordExport(exportCount);
+    // 保存の途中に変えた内容は zip に入っていないので、「zip 未保存」を残す
+    store.markSaved(revision);
     // ブラウザの保存のダイアログで取り消されても、ページからは分からない（<a download> では検出できない）
     notify(
       "zip をダウンロードしました（保存を取り消したときは、もう一度「zip で保存」してください）",
