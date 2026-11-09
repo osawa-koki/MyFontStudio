@@ -89,10 +89,23 @@ describe("projectStore", () => {
     expect(s().dirty).toBe(true);
   });
 
-  it("incrementExportCount は 1 ずつ増やす", () => {
-    expect(s().incrementExportCount()).toBe(1);
-    expect(s().incrementExportCount()).toBe(2);
+  it("recordExport は書き出し回数を進める（小さい値では戻さない）", () => {
+    s().recordExport(2);
     expect(s().project.font.exportCount).toBe(2);
+    s().recordExport(1);
+    expect(s().project.font.exportCount).toBe(2);
+  });
+
+  it("markSaved(revision) は、その後に変更があれば「zip 未保存」を残す", () => {
+    s().addChars(["a"]);
+    const { revision } = s();
+    s().addChars(["b"]);
+    s().markSaved(revision);
+    expect(s().dirty).toBe(true);
+    const latest = s().revision;
+    s().recordExport(3); // 書き出し回数の記録は変更に数えない
+    s().markSaved(latest);
+    expect(s().dirty).toBe(false);
   });
 
   it("loadProject は置き換えて保存済みにする", () => {

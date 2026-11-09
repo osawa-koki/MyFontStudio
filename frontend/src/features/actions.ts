@@ -15,8 +15,9 @@ export async function downloadFont(format: FontFormat): Promise<void> {
     notify("まだ文字がありません。入力ページで文字を作成してください", "error");
     return;
   }
-  const exportCount = store.incrementExportCount();
-  const { font } = useProjectStore.getState().project;
+  // 書き出し回数は、書き出せてから加算する（取り消し・失敗では増やさない）
+  const { font } = store.project;
+  const exportCount = font.exportCount + 1;
   try {
     // フォントの生成は Web Worker で行う
     const buffer = (await runInWorker(
@@ -24,6 +25,7 @@ export async function downloadFont(format: FontFormat): Promise<void> {
       { label: "フォントを作っています" },
     ))!;
     downloadBlob(new Blob([buffer], { type: MIME[format] }), `${font.familyName}.${format}`);
+    useProjectStore.getState().recordExport(exportCount);
   } catch (e) {
     if (e instanceof TaskCancelledError) return;
     console.error(e);

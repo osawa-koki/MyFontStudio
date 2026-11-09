@@ -20,6 +20,8 @@ export interface ProjectState {
   currentChar: string | null;
   /** 最後に zip に保存（または読み込み）してから変更があるか */
   dirty: boolean;
+  /** 「zip 未保存」になる変更のたびに 1 増える番号（zip の保存を始めた時点と比べる） */
+  revision: number;
   /** 開いているプロジェクトの ID（UUID。URL の ?uuid= と IndexedDB のキーに使う）。開いていなければ null */
   projectId: string | null;
 
@@ -42,15 +44,17 @@ export interface ProjectState {
   setCurrentChar(char: string | null): void;
   /** 文章を変える。dirty: false なら未保存にしない（初期値を入れるとき） */
   setPreviewText(text: string, options?: { dirty?: boolean }): void;
-  /** 書き出し回数を 1 加算し、新しい値を返す */
-  incrementExportCount(): number;
-  markSaved(): void;
+  /** 書き出しに成功したときに、書き出し回数を exportCount にする（今の値より小さければ変えない） */
+  recordExport(exportCount: number): void;
+  /** zip に保存した。revision（保存を始めた時点の番号）を渡すと、その後に変更があれば「zip 未保存」を残す */
+  markSaved(revision?: number): void;
 }
 
 export const useProjectStore = create<ProjectState>()((set, get) => ({
   project: createEmptyProject(),
   currentChar: null,
   dirty: false,
+  revision: 0,
   projectId: null,
 
   newProject(familyName, id = createProjectId()) {
@@ -82,13 +86,14 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     }
     if (settings.designer !== undefined) font.designer = sanitizeDisplayName(settings.designer);
     if (settings.exportCount !== undefined) font.exportCount = settings.exportCount;
-    set((s) => ({ project: { ...s.project, font }, dirty: true }));
+    set((s) => ({ project: { ...s.project, font }, dirty: true, revision: s.revision + 1 }));
   },
 
   setDefaults(defaults) {
     set((s) => ({
       project: { ...s.project, defaults: { ...s.project.defaults, ...defaults } },
       dirty: true,
+      revision: s.revision + 1,
     }));
   },
 
@@ -105,6 +110,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       set((s) => ({
         project: { ...s.project, queue: [...s.project.queue, ...added] },
         dirty: true,
+        revision: s.revision + 1,
       }));
     }
     return added;
@@ -125,6 +131,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         },
         currentChar: s.currentChar === char ? null : s.currentChar,
         dirty: true,
+        revision: s.revision + 1,
       };
     });
   },
@@ -137,6 +144,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       return {
         project: { ...s.project, queue, glyphs: { ...s.project.glyphs, [glyph.char]: glyph } },
         dirty: true,
+        revision: s.revision + 1,
       };
     });
   },
@@ -167,16 +175,18 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     set((s) => ({
       project: { ...s.project, previewText: text },
       dirty: (options?.dirty ?? true) || s.dirty,
+      revision: (options?.dirty ?? true) ? s.revision + 1 : s.revision,
     }));
   },
 
-  incrementExportCount() {
-    const exportCount = get().project.font.exportCount + 1;
-    set((s) => ({ project: { ...s.project, font: { ...s.project.font, exportCount } } }));
-    return exportCount;
+  recordExport(exportCount) {
+    set((s) => {
+      if (exportCount <= s.project.font.exportCount) return {};
+      return { project: { ...s.project, font: { ...s.project.font, exportCount } } };
+    });
   },
 
-  markSaved() {
-    set({ dirty: false });
+  markSaved(revision) {
+    set((s) => (revision === undefined || revision === s.revision ? { dirty: false } : {}));
   },
 }));
