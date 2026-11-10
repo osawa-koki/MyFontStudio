@@ -5,6 +5,7 @@ import { KUCHI, dot } from "../testing/fixtures";
 import {
   INDEX_KEY,
   LEGACY_AUTOSAVE_KEY,
+  moveAppKeys,
   createProjectId,
   debounce,
   deleteProject,
@@ -187,6 +188,26 @@ describe("文字ごとのキー（形式 2）", () => {
     await saveProject(kv, ID_A, p, false);
     await deleteProject(kv, ID_A);
     expect([...kv.data.keys()]).toEqual([INDEX_KEY]);
+  });
+});
+
+describe("moveAppKeys（前の保存先 keyval-store からアプリ専用のデータベースへ）", () => {
+  it("このアプリのキーだけを移して元を消す。移す先にある値は上書きしない。ほかのサイトのキーは触らない", async () => {
+    const from = memoryStore();
+    const to = memoryStore();
+    from.data.set(INDEX_KEY, ["old-index"]);
+    from.data.set(projectKey(ID_A), { a: 1 });
+    from.data.set(LEGACY_AUTOSAVE_KEY, { legacy: true });
+    from.data.set("other-site:key", "x");
+    to.data.set(projectKey(ID_A), { a: "new" });
+    const keys = async () => [...from.data.keys()];
+    expect(await moveAppKeys({ ...from, keys }, to)).toBe(2);
+    expect(to.data.get(INDEX_KEY)).toEqual(["old-index"]);
+    expect(to.data.get(projectKey(ID_A))).toEqual({ a: "new" });
+    expect(to.data.get(LEGACY_AUTOSAVE_KEY)).toEqual({ legacy: true });
+    expect([...from.data.keys()]).toEqual(["other-site:key"]);
+    // 2 回目は何もしない
+    expect(await moveAppKeys({ ...from, keys }, to)).toBe(0);
   });
 });
 

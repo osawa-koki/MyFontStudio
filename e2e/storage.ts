@@ -1,20 +1,24 @@
 import { expect, type Page } from "@playwright/test";
 
-/** アプリが IndexedDB（idb-keyval の keyval-store）に保存した値を読む */
+/** アプリの IndexedDB（データベース myfontstudio・ストア projects） */
+export const DB_NAME = "myfontstudio";
+export const STORE_NAME = "projects";
+
+/** アプリが IndexedDB に保存した値を読む */
 export async function readStored(page: Page, key: string): Promise<unknown> {
   return page.evaluate(
-    (k) =>
+    ([k, dbName, storeName]) =>
       new Promise((resolve, reject) => {
-        const open = indexedDB.open("keyval-store");
+        const open = indexedDB.open(dbName);
         open.onerror = () => reject(open.error);
         open.onsuccess = () => {
           const db = open.result;
-          if (!db.objectStoreNames.contains("keyval")) {
+          if (!db.objectStoreNames.contains(storeName)) {
             db.close();
             resolve(undefined);
             return;
           }
-          const get = db.transaction("keyval", "readonly").objectStore("keyval").get(k);
+          const get = db.transaction(storeName, "readonly").objectStore(storeName).get(k);
           get.onsuccess = () => {
             resolve(get.result);
             db.close();
@@ -22,7 +26,7 @@ export async function readStored(page: Page, key: string): Promise<unknown> {
           get.onerror = () => reject(get.error);
         };
       }),
-    key,
+    [key, DB_NAME, STORE_NAME] as const,
   );
 }
 

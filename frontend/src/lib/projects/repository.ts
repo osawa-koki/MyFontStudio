@@ -20,6 +20,18 @@ export interface KeyValueStore {
   delMany(keys: string[]): Promise<void>;
 }
 
+/**
+ * IndexedDB の保存先（アプリ専用のデータベース）。GitHub Pages では同じオリジンにほかのサイトがあるので、
+ * idb-keyval の既定（keyval-store）を共有しないようにする（仕様 10.4）
+ */
+export const DB_NAME = "myfontstudio";
+export const STORE_NAME = "projects";
+/** 前の版の保存先（idb-keyval の既定のデータベース・ストア） */
+export const LEGACY_DB_NAME = "keyval-store";
+export const LEGACY_STORE_NAME = "keyval";
+/** このアプリのキーの先頭 */
+export const KEY_PREFIX = "myfontstudio:";
+
 export const INDEX_KEY = "myfontstudio:projects";
 /** プロジェクトの設定・文字一覧・文章と、グリフ・描いた履歴のある文字の一覧（メタデータ） */
 export const projectKey = (id: string) => `myfontstudio:project:${id}`;
@@ -259,6 +271,31 @@ export async function deleteProject(kv: KeyValueStore, id: string): Promise<void
       ]
     : [];
   await kv.delMany([...keys, projectKey(id)]);
+}
+
+/** すべてのキーを読める保存先（前の版の保存先から移すときに使う） */
+export interface ListableStore {
+  keys(): Promise<unknown[]>;
+  getMany(keys: string[]): Promise<unknown[]>;
+  delMany(keys: string[]): Promise<void>;
+}
+
+/**
+ * 前の版の保存先（idb-keyval の既定の keyval-store）から、このアプリのキー（myfontstudio:…）を移し、元の値を消す。
+ * 移す先にすでにある値は上書きしない（移す先が正）。ほかのサイトのキーは触らない。移したキーの数を返す
+ */
+export async function moveAppKeys(from: ListableStore, to: KeyValueStore): Promise<number> {
+  const keys = (await from.keys()).filter(
+    (k): k is string => typeof k === "string" && k.startsWith(KEY_PREFIX),
+  );
+  if (keys.length === 0) return 0;
+  const [values, existing] = await Promise.all([from.getMany(keys), to.getMany(keys)]);
+  const entries = keys
+    .map((k, i) => [k, values[i]] as [string, unknown])
+    .filter((_, i) => existing[i] === undefined && values[i] !== undefined);
+  if (entries.length > 0) await to.setMany(entries);
+  await from.delMany(keys);
+  return entries.length;
 }
 
 /**

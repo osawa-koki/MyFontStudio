@@ -323,3 +323,65 @@ test("使い方ページに移ってもロックを持ち続け、あとから�
   await expect(page.getByRole("dialog", { name: "フォントの設定" })).toBeVisible();
   await second.close();
 });
+
+test("前の版の保存先（keyval-store）にあるデータを、アプリ専用のデータベースに移して開ける", async ({
+  page,
+}) => {
+  await page.goto("./");
+  await page.getByRole("button", { name: "新しくはじめる" }).click();
+  await page.getByRole("dialog").getByLabel("フォント名").fill("Legacy");
+  await page.getByRole("dialog").getByRole("button", { name: "はじめる" }).click();
+  await expect(page).toHaveURL(UUID_URL);
+  await addAndDraw(page, "甲");
+  await waitForStored(page, "myfontstudio:projects", (v) => Array.isArray(v) && v.length > 0);
+
+  // アプリを閉じて（スクリプトのない同じオリジンのファイルを開いて）、データを前の版の保存先に移しておく
+  await page.goto("./icon.svg");
+  const moved = await page.evaluate(async () => {
+    const req = <T>(r: IDBRequest<T>) =>
+      new Promise<T>((resolve, reject) => {
+        r.onsuccess = () => resolve(r.result);
+        r.onerror = () => reject(r.error);
+      });
+    const open = (name: string, store: string) => {
+      const r = indexedDB.open(name);
+      r.onupgradeneeded = () => r.result.createObjectStore(store);
+      return req(r);
+    };
+    const app = await open("myfontstudio", "projects");
+    const tx = app.transaction("projects", "readonly").objectStore("projects");
+    const keys = (await req(tx.getAllKeys())) as string[];
+    const values = await req(tx.getAll());
+    app.close();
+    const legacy = await open("keyval-store", "keyval");
+    const w = legacy.transaction("keyval", "readwrite");
+    keys.forEach((k, i) => w.objectStore("keyval").put(values[i], k));
+    w.objectStore("keyval").put("x", "other-site:key");
+    await new Promise((resolve) => (w.oncomplete = resolve));
+    legacy.close();
+    await req(indexedDB.deleteDatabase("myfontstudio"));
+    return keys.length;
+  });
+  expect(moved).toBeGreaterThan(1);
+
+  // 開き直すと、移したプロジェクトが一覧に出て開ける
+  await page.goto("./");
+  await page.getByRole("link", { name: "Legacy を開く" }).click();
+  await expect(page.getByLabel("登録済み文字数")).toHaveText("1 文字");
+  // 前の版の保存先からは、このアプリのキーだけが消えている
+  const remaining = await page.evaluate(
+    () =>
+      new Promise<string[]>((resolve, reject) => {
+        const r = indexedDB.open("keyval-store");
+        r.onerror = () => reject(r.error);
+        r.onsuccess = () => {
+          const g = r.result.transaction("keyval").objectStore("keyval").getAllKeys();
+          g.onsuccess = () => {
+            resolve(g.result as string[]);
+            r.result.close();
+          };
+        };
+      }),
+  );
+  expect(remaining).toEqual(["other-site:key"]);
+});

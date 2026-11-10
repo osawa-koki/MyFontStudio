@@ -7,12 +7,18 @@ import { useSaveStatusStore } from "../store/saveStatusStore";
 import { useTabLockStore } from "../store/tabLockStore";
 import { useUiStore } from "../store/uiStore";
 
-// IndexedDB（idb-keyval）をメモリの Map に差し替える
+// IndexedDB（idb-keyval）をメモリの Map に差し替える。db はアプリ専用のデータベース（myfontstudio / projects）
 const db = vi.hoisted(() => new Map<string, unknown>());
 const writes = vi.hoisted(() => [] as string[][]);
 // setMany を失敗させる（容量の不足などのテスト）
 const failure = vi.hoisted(() => ({ error: null as Error | null }));
 vi.mock("idb-keyval", () => ({
+  // アプリ専用のデータベースだけを使う（ほかの名前で開いたら失敗にする）
+  createStore: (dbName: string, storeName: string) => {
+    if (`${dbName}/${storeName}` !== "myfontstudio/projects") throw new Error(dbName);
+    return "app";
+  },
+  keys: async () => [...db.keys()],
   get: async (k: string) => structuredClone(db.get(k)),
   getMany: async (ks: string[]) => ks.map((k) => structuredClone(db.get(k))),
   set: async (k: string, v: unknown) => void db.set(k, structuredClone(v)),

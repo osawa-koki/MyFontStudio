@@ -44,7 +44,8 @@
 
 ## 使う
 
-- GitHub Pages：https://osawa-koki.github.io/MyFontStudio/
+- Render：https://myfontstudio.onrender.com/ （おすすめ。このアプリ専用のオリジンなので、ブラウザに保存した手書きのデータはこのアプリだけが読める。無料のプランなので、しばらく使われていないと最初の表示に時間がかかる）
+- GitHub Pages：https://osawa-koki.github.io/MyFontStudio/ （オリジン `https://osawa-koki.github.io` を同じアカウントのほかの GitHub Pages のサイトと共有するので、ブラウザに保存したデータ（IndexedDB）はほかのサイトのページからも読める。試すだけならこちらでもよい）
 - Docker：`docker run --rm -p 8080:8080 ghcr.io/osawa-koki/myfontstudio:main` → http://localhost:8080/（`main` へのマージで GitHub Container Registry にプッシュしている。手元でビルドするなら `docker build -t myfontstudio .`）
   - Nginx で配信する（待ち受けるポートは環境変数 `PORT`、既定 8080）。Render には `render.yaml` の Blueprint でデプロイできる
 

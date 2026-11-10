@@ -1,9 +1,25 @@
-import { del, delMany, get, getMany, set, setMany } from "idb-keyval";
+import {
+  createStore,
+  del,
+  delMany,
+  get,
+  getMany,
+  keys,
+  set,
+  setMany,
+  type UseStore,
+} from "idb-keyval";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { nextUncreated } from "../lib/project/chars";
 import {
+  DB_NAME,
+  LEGACY_DB_NAME,
+  LEGACY_STORE_NAME,
   SAVE_DELAY_MS,
+  STORE_NAME,
+  moveAppKeys,
+  type ListableStore,
   createProjectId,
   debounce,
   deleteProject,
@@ -27,7 +43,33 @@ import { notify } from "../store/uiStore";
 import type { Project } from "../types/project";
 
 /** IndexedDB（idb-keyval）。プライベートブラウズ・容量の不足などで保存に失敗したら、通知してヘッダーに出す（saveStatusStore） */
-const idb: KeyValueStore = { get, getMany, set, setMany, del, delMany };
+const idb: KeyValueStore = bindStore(() => appStore());
+
+/** アプリ専用のデータベース（使うときに開く。静的エクスポートの事前の描画では IndexedDB がないため） */
+let appStoreCache: UseStore | null = null;
+const appStore = () => (appStoreCache ??= createStore(DB_NAME, STORE_NAME));
+
+function bindStore(store: () => UseStore): KeyValueStore & ListableStore {
+  return {
+    get: (k) => get(k, store()),
+    getMany: (ks) => getMany(ks, store()),
+    set: (k, v) => set(k, v, store()),
+    setMany: (entries) => setMany(entries, store()),
+    del: (k) => del(k, store()),
+    delMany: (ks) => delMany(ks, store()),
+    keys: () => keys(store()),
+  };
+}
+
+/**
+ * 前の版の保存先（idb-keyval の既定の keyval-store）があるか。ないのに開くと、空のデータベースを作ってしまうので確かめる
+ * （indexedDB.databases() がないブラウザでは開いて確かめる）
+ */
+async function legacyStoreExists(): Promise<boolean> {
+  if (typeof indexedDB === "undefined") return false;
+  if (typeof indexedDB.databases !== "function") return true;
+  return (await indexedDB.databases()).some((d) => d.name === LEGACY_DB_NAME);
+}
 
 /** 保存したことのあるプロジェクトの ID（中身が空になっても保存し続ける） */
 const stored = new Set<string>();
@@ -112,7 +154,32 @@ const saveLater = debounce((id: string, project: Project, dirty: boolean) => {
 /** 待っている保存を済ませる（別のプロジェクトに切り替える前・一覧を読む前）。書き込みが終わるまで待てる */
 export function flushProjectSave(): Promise<void> {
   saveLater.flush();
-  return writes;
+  // 起動時の引き継ぎ（前の版の保存先・自動保存）が済んでから読めるように、それも待つ
+  return ensureStartup().then(() => writes);
+}
+
+let startup: Promise<void> | null = null;
+
+/**
+ * 起動時の引き継ぎを 1 回だけ行う（書き込みの列に並べる）。一覧・プロジェクトを読む前に済ませる
+ * （使い方ページの一覧は、AppShell の useProjectPersistence より先に読みに来るため）
+ * - 前の版の保存先（ほかのサイトと共有する keyval-store）から、このアプリのデータを移す
+ * - 前の版の自動保存（プロジェクトが 1 つだけ）を、1 つのプロジェクトとして引き継ぐ
+ */
+function ensureStartup(): Promise<void> {
+  startup ??= enqueue(async () => {
+    if (await legacyStoreExists()) {
+      const legacyStore = createStore(LEGACY_DB_NAME, LEGACY_STORE_NAME);
+      const moved = await moveAppKeys(
+        bindStore(() => legacyStore),
+        idb,
+      );
+      if (moved > 0) console.info(`前の保存先から ${moved} 個の値を移しました`);
+    }
+    const id = await migrateLegacyAutosave(idb);
+    if (id) stored.add(id);
+  }, false);
+  return startup;
 }
 
 /** 開いているプロジェクトを今すぐ保存する（新しく作った・zip から読み込んだとき。空でも一覧に出す） */
@@ -149,10 +216,7 @@ export async function deleteStoredProject(id: string): Promise<void> {
  */
 export function useProjectPersistence(): void {
   useEffect(() => {
-    void enqueue(async () => {
-      const id = await migrateLegacyAutosave(idb);
-      if (id) stored.add(id);
-    }, false);
+    void ensureStartup();
     const unsubscribe = useProjectStore.subscribe((state, prev) => {
       // いつ保存するかは lib/projects/saving.ts（ほかのタブで編集しているプロジェクトは、古い内容で上書きしないよう保存しない）
       const timing = saveTiming(state, prev, canEditInThisTab(state.projectId));

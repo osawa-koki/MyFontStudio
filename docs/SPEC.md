@@ -511,6 +511,8 @@ textareaに入力した文章を、生成中のフォントでその下に表示
 
 Nginxでは、CSP（`default-src 'self'` を基本とし、外部への通信を禁止）・HSTS・`Cross-Origin-Resource-Policy` などのセキュリティヘッダーを付け、ヘルスチェック用に `/healthz` を返す。Next.jsの静的エクスポートはHTMLにインラインのスクリプトを埋め込むので、ビルド時にそのSHA-256を集めて `script-src` に入れる（`'unsafe-inline'` は使わない）。GitHub PagesはHTTPヘッダーを付けられないので、ビルドしたHTMLの `<head>` の先頭に同じCSPの `<meta http-equiv="Content-Security-Policy">` を入れる（`frame-ancestors` は `<meta>` では効かない）。
 
+**オリジンとブラウザの保存先**：ブラウザの保存先（IndexedDB・localStorage・使用量・永続化）はオリジンごとに分かれる。Render（https://myfontstudio.onrender.com/ ）は独自のオリジンなので、このアプリだけが読める。GitHub Pages（https://osawa-koki.github.io/MyFontStudio/ ）のオリジン `https://osawa-koki.github.io` は同じアカウントのほかのGitHub Pagesのサイトと共有するので、手書きのデータはほかのサイトのページ（とそのページが読み込むスクリプト）からも読める。カスタムドメインは設定しないので、大事な作業にはRenderの版を案内する（READMEと、GitHub Pagesで開いたときの使い方ページのお知らせ）。IndexedDBは、idb-keyvalの既定（`keyval-store`）ではなくアプリ専用のデータベース（`myfontstudio`・ストア `projects`）に保存し、前の版の保存先にあるこのアプリのキー（`myfontstudio:…`）は起動時に移す（ほかのサイトが既定のデータベースを使っても混ざらないように。ほかのサイトから読めることは変わらない）
+
 ## 11. 実装ステップと受け入れ基準
 
 フォント生成という最大の技術リスクを最初に潰し、その後に画面を肉付けする順で進める。各ステップの終わりで動作する状態を保つこと。
@@ -554,6 +556,7 @@ Nginxでは、CSP（`default-src 'self'` を基本とし、外部への通信を
 
 | 日付 | 箇所 | 内容 |
 | --- | --- | --- |
+| 2026-11-10 | 10.4 | 配信先のオリジンと、データを読める範囲を書く。IndexedDBをアプリ専用のデータベースにし、前の保存先から移す。GitHub Pagesでは使い方ページでRenderの版を案内する |
 | 2026-11-10 | 3 | 複数のタブ：ロックはプロジェクトを開いている間持ち続け、ロックを持つタブだけが保存する。ロックを持たないタブではヘッダーの編集・書き出しを使えない |
 | 2026-11-10 | 3 | ブラウザへの保存に失敗したら通知し、ヘッダーに出し、タブを閉じる前に警告する |
 | 2026-11-10 | 4.4・7.5・10 | 実装に合わせる：文字チップの削除は確認ダイアログ（未作成の文字でも確かめる）、zipで読むパスに描いた履歴（`rawdata/history/`）を足す。10.3と10.4を番号の順に並べる |

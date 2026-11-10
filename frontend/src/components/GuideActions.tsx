@@ -10,6 +10,7 @@ import { distinguishingId } from "../lib/projects/display";
 import { projectHref, type ProjectSummary } from "../lib/projects/repository";
 import { useProjectStore } from "../store/projectStore";
 import { confirmDialog, notify } from "../store/uiStore";
+import { SharedOriginNotice } from "./SharedOriginNotice";
 import { StorageStatus } from "./StorageStatus";
 
 /** 使い方ページのボタン（新しくはじめる・zip を開く）と、プロジェクトの一覧（開く・削除） */
@@ -122,6 +123,7 @@ export function GuideActions() {
           </ul>
         )}
         <StorageStatus />
+        <SharedOriginNotice />
       </section>
     </div>
   );
