@@ -2,7 +2,7 @@ name: publish
 
 # main への push（PR のマージ）で Docker イメージをビルドし、GitHub Container Registry にプッシュする。
 # イメージに入るもの（Dockerfile が COPY するもの）が変わったときだけ動く。ドキュメントだけの変更で新しいバージョンを作ると、
-# 古いバージョンを消す（直近の KEEP_VERSIONS 個だけ残す）ときに、中身の違う意味のあるバージョンが押し出されるため
+# 古いバージョンを消す（直近の KEEP_VERSIONS 回分だけ残す）ときに、中身の違う意味のあるバージョンが押し出されるため
 on:
   push:
     branches:
@@ -27,7 +27,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # 残しておくイメージのバージョンの数。直近のものだけ残す
+  # 残しておくイメージの数（タグの付いたバージョン＝プッシュ 1 回分の数）。直近のものだけ残す
   KEEP_VERSIONS: 5
 
 jobs:
@@ -149,22 +149,32 @@ jobs:
           exit-code: "1"
           skip-setup-trivy: true
 
-  # 古いバージョンを消して、直近の KEEP_VERSIONS 個だけ残す（main のタグが付いた最新のものは必ず残る）
+  # 古いバージョンを消す。タグの付いたバージョン（プッシュ 1 回分のインデックス）を新しい順に KEEP_VERSIONS 個残し、
+  # そのインデックスが参照するアーキテクチャごとのマニフェスト（タグなし）も残す（main のタグが付いた最新のものは必ず残る）。
+  # バージョンの数で数えると、残したタグの子のマニフェストまで消えて pull できなくなるため（.github/scripts/cleanup-ghcr.sh）
   cleanup:
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     needs: [ push ]
     permissions:
+      contents: read
       packages: write
     steps:
-      - name: Package name
-        id: package
-        env:
-          NAME: ${{ github.event.repository.name }}
-        run: echo "name=${NAME,,}" >> "$GITHUB_OUTPUT"
-      - name: Delete old image versions
-        uses: actions/delete-package-versions@e5bc658cc4c965c472efe991f8beea3981499c55 # v5.0.0
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # 残すインデックスが参照するマニフェストを読むため
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
-          package-name: ${{ steps.package.outputs.name }}
-          package-type: container
-          min-versions-to-keep: ${{ env.KEEP_VERSIONS }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Delete old image versions
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          IMAGE: ${{ needs.push.outputs.image }}
+          REPOSITORY_NAME: ${{ github.event.repository.name }}
+        run: |
+          export PACKAGE="${REPOSITORY_NAME,,}"
+          .github/scripts/cleanup-ghcr.sh
