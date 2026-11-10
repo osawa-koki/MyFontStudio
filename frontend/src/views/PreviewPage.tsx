@@ -5,9 +5,16 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { downloadFont } from "../features/actions";
 import { NotdefBox } from "../components/NotdefBox";
-import { parseInputChars } from "../lib/project/chars";
 import { projectHref } from "../lib/projects/repository";
-import { missingChars, splitPreviewText } from "../lib/project/preview";
+import {
+  addMissingMessage,
+  classifyMissing,
+  createdText,
+  missingChars,
+  splitPreviewText,
+} from "../lib/project/preview";
+import { rebuildPreviewFont } from "../features/fontPreview";
+import { countGlyphs } from "../lib/project/project";
 import { useFontStore } from "../store/fontStore";
 import { TEXT_COLORS, usePreviewStore, type MissingMode } from "../store/previewStore";
 import { useProjectStore } from "../store/projectStore";
@@ -33,23 +40,60 @@ export function PreviewPage() {
   const glyphs = useProjectStore((s) => s.project.glyphs);
   const projectId = useProjectStore((s) => s.projectId);
   const setPreviewText = useProjectStore((s) => s.setPreviewText);
-  const { family, chars, outlineCount } = useFontStore();
+  const { family, chars, status, error } = useFontStore();
+  // 作成済みの文字があるかは、フォント（作っている途中・失敗したことがある）ではなくプロジェクトで数える
+  const glyphCount = useProjectStore((s) => countGlyphs(s.project));
   const settings = usePreviewStore();
   const router = useRouter();
 
-  // 文章が空なら、作成済みの文字を連結したものから始める。
+  // プロジェクトを開いて初めてプレビューを表示したとき、文章が空なら、作成済みの文字を連結したものから始める
+  // （1 回だけ。利用者が消して空にした文章は埋め直さない）。
   // フォントの作り直し（300ms 後）を待たずに決まるよう、フォントではなくグリフから選ぶ
+  const textInitialized = usePreviewStore((s) =>
+    projectId ? s.textInitialized.has(projectId) : true,
+  );
   useEffect(() => {
-    const created = queue.filter((c) => (glyphs[c]?.strokes.length ?? 0) > 0);
-    if (previewText === "" && created.length > 0) {
-      setPreviewText(created.join(""), { dirty: false });
+    if (!projectId || textInitialized) return;
+    const mark = () => usePreviewStore.getState().markTextInitialized(projectId);
+    if (previewText !== "") {
+      mark();
+      return;
     }
-  }, [previewText, glyphs, queue, setPreviewText]);
+    const initial = createdText(queue, glyphs);
+    // 作成済みの文字がまだなければ、できたときに入れる
+    if (initial === "") return;
+    setPreviewText(initial, { dirty: false });
+    mark();
+  }, [projectId, textInitialized, previewText, glyphs, queue, setPreviewText]);
 
   const segments = useMemo(() => splitPreviewText(previewText, chars), [previewText, chars]);
   const missing = useMemo(() => missingChars(previewText, chars), [previewText, chars]);
+  // 絵文字などは一覧に追加できないので、分けて出す
+  const { addable, unsupported } = useMemo(() => classifyMissing(missing), [missing]);
 
-  if (outlineCount === 0 || !family) {
+  const retry = (
+    <button type="button" className="btn" onClick={() => void rebuildPreviewFont()}>
+      もう一度作る
+    </button>
+  );
+  if (glyphCount > 0 && !family && status === "error") {
+    return (
+      <section className="flex flex-col items-center gap-4 py-16 text-center" role="alert">
+        <h1 className="text-xl font-bold">プレビュー</h1>
+        <p>フォントを作れませんでした：{error}</p>
+        {retry}
+      </section>
+    );
+  }
+  if (glyphCount > 0 && !family && status !== "ready") {
+    return (
+      <section className="flex flex-col items-center gap-4 py-16 text-center">
+        <h1 className="text-xl font-bold">プレビュー</h1>
+        <p role="status">フォントを作っています…</p>
+      </section>
+    );
+  }
+  if (glyphCount === 0 || !family) {
     return (
       <section className="flex flex-col items-center gap-4 py-16 text-center">
         <h1 className="text-xl font-bold">プレビュー</h1>
@@ -79,18 +123,29 @@ export function PreviewPage() {
   };
 
   const addMissing = () => {
-    const { accepted } = parseInputChars(missing.join(""));
     const store = useProjectStore.getState();
-    store.addChars(accepted);
-    const first = accepted[0];
+    // 追加できる文字（絵文字などを除く）だけを追加し、実際に追加した数を知らせる
+    const added = store.addChars(addable);
+    const first = addable[0];
     if (first) store.setCurrentChar(first);
-    notify(`${accepted.length} 文字を入力ページの一覧に追加しました`, "success");
+    notify(addMissingMessage(added, addable), added.length > 0 ? "success" : "info");
     router.push(projectHref("/editor", projectId));
   };
 
   return (
     <div className="flex flex-col gap-5">
       <h1 className="text-xl font-bold">プレビュー</h1>
+      {status === "error" && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-red-300 bg-red-50 p-3 text-sm"
+        >
+          <span>
+            最新の文字でフォントを作れませんでした（前に作ったフォントで表示しています）：{error}
+          </span>
+          {retry}
+        </div>
+      )}
       <label className="flex flex-col gap-1 text-sm">
         確かめたい文章
         <textarea
@@ -207,12 +262,24 @@ export function PreviewPage() {
           <p className="text-sm text-green-800">文章の文字はすべて作成済みです</p>
         ) : (
           <>
-            <p className="text-lg tracking-wider break-all">{missing.join(" ")}</p>
-            <div>
-              <button type="button" className="btn btn-primary" onClick={addMissing}>
-                入力ページに追加して描く
-              </button>
-            </div>
+            {addable.length > 0 && (
+              <>
+                <p className="text-lg tracking-wider break-all" data-testid="missing-addable">
+                  {addable.join(" ")}
+                </p>
+                <div>
+                  <button type="button" className="btn btn-primary" onClick={addMissing}>
+                    入力ページに追加して描く
+                  </button>
+                </div>
+              </>
+            )}
+            {unsupported.length > 0 && (
+              <p className="text-sm text-slate-600" data-testid="missing-unsupported">
+                対応していない文字（絵文字・結合文字など）は、フォントに追加できません：
+                <span className="ml-1 tracking-wider break-all">{unsupported.join(" ")}</span>
+              </p>
+            )}
           </>
         )}
       </section>

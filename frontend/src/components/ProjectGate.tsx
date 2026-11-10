@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { useProjectFromUrl } from "../features/projects";
 import { unreadableMessage } from "../lib/projects/repository";
-import { takeOverProject, useProjectLock } from "../features/tabLock";
+import { takeOverProject } from "../features/tabLock";
 import { useProjectStore } from "../store/projectStore";
 import { useTabLockStore } from "../store/tabLockStore";
 
@@ -13,8 +13,8 @@ export function ProjectGate({ children }: { children: ReactNode }) {
   const url = useProjectFromUrl();
   const state = url.state;
   const projectId = useProjectStore((s) => s.projectId);
-  const lock = useTabLockStore((s) => s.status);
-  useProjectLock(state === "ready" ? projectId : null);
+  // ロックは AppShell で、開いているプロジェクトについて取る
+  const lock = useTabLockStore((s) => (s.projectId === projectId ? s.status : "pending"));
   if (state === "invalid") {
     return (
       <section className="flex flex-col items-center gap-4 py-16 text-center">

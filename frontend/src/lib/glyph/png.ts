@@ -1,12 +1,14 @@
 import { ASCENDER, EM } from "./constants";
-import { getGlyphOutline } from "./outline";
 import { contoursToSvgPath } from "./path";
-import type { GlyphData } from "../../types/project";
+import type { Contour } from "./types";
 
 export const PREVIEW_PNG_SIZE = 256;
 
-/** グリフのプレビュー PNG（256×256、白背景に黒）を作る。OffscreenCanvas（Web Worker でも使える）がなければ通常の Canvas を使う */
-export async function renderGlyphPng(glyph: GlyphData): Promise<Uint8Array> {
+/**
+ * グリフの輪郭（フォント座標）から、プレビュー PNG（256×256、白背景に黒）を作る。
+ * OffscreenCanvas（Web Worker でも使える）がなければ通常の Canvas を使う
+ */
+export async function renderOutlinePng(contours: readonly Contour[]): Promise<Uint8Array> {
   const size = PREVIEW_PNG_SIZE;
   const offscreen = typeof OffscreenCanvas !== "undefined" ? new OffscreenCanvas(size, size) : null;
   const canvas =
@@ -20,7 +22,7 @@ export async function renderGlyphPng(glyph: GlyphData): Promise<Uint8Array> {
   const s = size / EM;
   ctx.setTransform(s, 0, 0, -s, 0, ASCENDER * s);
   ctx.fillStyle = "#000000";
-  ctx.fill(new Path2D(contoursToSvgPath(getGlyphOutline(glyph).contours)), "nonzero");
+  ctx.fill(new Path2D(contoursToSvgPath(contours)), "nonzero");
   const blob = offscreen
     ? await offscreen.convertToBlob({ type: "image/png" })
     : await new Promise<Blob>((resolve, reject) =>

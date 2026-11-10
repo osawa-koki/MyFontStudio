@@ -35,7 +35,7 @@ jobs:
       # ESLint と Prettier
       - name: Lint
         run: npm run lint
-      # 単体テスト。カバレッジの下限は vite.config.ts の coverage.thresholds
+      # 単体テスト。カバレッジの下限は vitest.config.ts の coverage.thresholds
       - name: Test with coverage
         shell: bash
         run: |

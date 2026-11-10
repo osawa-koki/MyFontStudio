@@ -107,3 +107,17 @@ test("このブラウザへの保存の状態（永続化・使用量）を表�
     await expect(status).toContainText("自動では消されません");
   }
 });
+
+test("プロジェクトを開いていない使い方ページでは、zip で保存できない（Ctrl/⌘+S でもダウンロードしない）", async ({
+  page,
+}) => {
+  let downloads = 0;
+  page.on("download", () => downloads++);
+  await page.goto("./");
+  await expect(page.getByRole("button", { name: "zip で保存" })).toBeDisabled();
+  await page.keyboard.press("ControlOrMeta+s");
+  await expect(page.getByText("保存するプロジェクトを開いていません")).toBeVisible();
+  await page.keyboard.press("ControlOrMeta+Shift+s");
+  await page.waitForTimeout(500);
+  expect(downloads).toBe(0);
+});

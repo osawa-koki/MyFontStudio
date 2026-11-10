@@ -319,3 +319,72 @@ test("保存したデータが読めないプロジェクトは、空のプロ�
   await page.getByRole("button", { name: "再読み込み" }).click();
   await expect(page.getByLabel("登録済み文字数")).toHaveText("1 文字");
 });
+
+test("同じフォント名のプロジェクトを作る・名前を変えるときは、インストールで上書きされることを知らせる", async ({
+  page,
+}) => {
+  await page.goto("./");
+  await page.getByRole("button", { name: "新しくはじめる" }).click();
+  let dialog = page.getByRole("dialog", { name: "フォント名を決めてください" });
+  await expect(dialog.getByLabel("フォント名")).toHaveValue("MyHandwriting");
+  await dialog.getByRole("button", { name: "はじめる" }).click();
+  await expect(page).toHaveURL(UUID_URL);
+
+  // 2 つ目の初期値は重ならない名前。同じ名前（大文字・小文字の違いだけ）にすると確かめる
+  await page
+    .getByRole("navigation", { name: "ページ" })
+    .getByRole("link", { name: "使い方" })
+    .click();
+  await page.getByRole("button", { name: "新しくはじめる" }).click();
+  dialog = page.getByRole("dialog", { name: "フォント名を決めてください" });
+  await expect(dialog.getByLabel("フォント名")).toHaveValue("MyHandwriting2");
+  await dialog.getByLabel("フォント名").fill("myhandwriting");
+  await dialog.getByRole("button", { name: "はじめる" }).click();
+  const same = page.getByRole("dialog", { name: "同じフォント名のプロジェクトがあります" });
+  await expect(same).toContainText("上書き");
+  // 名前を変える → 入力に戻る
+  await same.getByRole("button", { name: "名前を変える" }).click();
+  dialog = page.getByRole("dialog", { name: "フォント名を決めてください" });
+  await expect(dialog.getByLabel("フォント名")).toHaveValue("myhandwriting");
+  await dialog.getByLabel("フォント名").fill("Second");
+  await dialog.getByRole("button", { name: "はじめる" }).click();
+  await expect(page.getByRole("button", { name: /フォント名：Second/ })).toBeVisible();
+
+  // ヘッダーの「編集」で同じ名前にしようとすると知らせる
+  await page.getByRole("button", { name: /フォント名：Second/ }).click();
+  const settings = page.getByRole("dialog", { name: "フォントの設定" });
+  await settings.getByLabel(/^フォント名/).fill("MyHandwriting");
+  await expect(settings.getByRole("status")).toContainText("上書き");
+  await settings.getByLabel(/^フォント名/).fill("Third");
+  await expect(settings.getByRole("status")).toHaveCount(0);
+});
+
+test("使い方ページに移ってもロックを持ち続け、あとから開いたタブではヘッダーの操作もできない", async ({
+  page,
+  context,
+}) => {
+  await page.goto("./editor");
+  await expect(page).toHaveURL(UUID_URL);
+  const url = page.url();
+  await addAndDraw(page, "甲");
+  // 1 つ目のタブは使い方ページに移る（プロジェクトは開いたまま）
+  await page.getByRole("link", { name: "使い方" }).click();
+  await expect(page.getByRole("heading", { name: "手書きフォントを作ろう" })).toBeVisible();
+
+  const second = await context.newPage();
+  await second.goto(url);
+  await expect(
+    second.getByRole("heading", { name: "このプロジェクトはほかのタブで開いています" }),
+  ).toBeVisible();
+  // 古い内容で上書き・書き出しをしないよう、ヘッダーの操作は使えない
+  await expect(second.getByRole("button", { name: /^フォント名：/ })).toBeDisabled();
+  await expect(second.getByRole("button", { name: "zip で保存" })).toBeDisabled();
+  await expect(
+    second.getByRole("button", { name: "フォントをダウンロード（.ttf）" }),
+  ).toBeDisabled();
+
+  // 1 つ目のタブでは、使い方ページからもヘッダーで編集できる
+  await page.getByRole("button", { name: /^フォント名：/ }).click();
+  await expect(page.getByRole("dialog", { name: "フォントの設定" })).toBeVisible();
+  await second.close();
+});
