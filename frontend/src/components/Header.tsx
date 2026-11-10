@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { countGlyphs } from "../lib/project/project";
 import { projectHref } from "../lib/projects/repository";
 import { useProjectStore } from "../store/projectStore";
+import { useSaveStatusStore } from "../store/saveStatusStore";
 import { FontDownloadMenu } from "./FontDownloadMenu";
 import { FontSettingsButton } from "./FontSettingsButton";
 import { ProjectSwitcher } from "./ProjectSwitcher";
@@ -19,6 +20,7 @@ const NAV = [
 export function Header() {
   const glyphCount = useProjectStore((s) => countGlyphs(s.project));
   const dirty = useProjectStore((s) => s.dirty);
+  const saveFailed = useSaveStatusStore((s) => s.failed);
   const pathname = usePathname();
   const projectId = useProjectStore((s) => s.projectId);
   // 入力・プレビューへのリンクには、開いているプロジェクトの ?uuid= を付ける
@@ -60,6 +62,15 @@ export function Header() {
               title="ブラウザには自動で保存しています。zip に書き出していない変更があります（ほかの PC に移すときやバックアップには「zip で保存」）"
             >
               zip 未保存
+            </span>
+          )}
+          {saveFailed && (
+            <span
+              className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-800"
+              role="status"
+              title="ブラウザ（IndexedDB）への自動保存に失敗しています。作業を失わないよう「zip で保存」してください"
+            >
+              ブラウザに保存できていません
             </span>
           )}
         </div>

@@ -5,10 +5,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { downloadFont } from "../features/actions";
 import { NotdefBox } from "../components/NotdefBox";
-import { parseInputChars } from "../lib/project/chars";
 import { projectHref } from "../lib/projects/repository";
 import {
   addMissingMessage,
+  classifyMissing,
   createdText,
   missingChars,
   splitPreviewText,
@@ -64,6 +64,8 @@ export function PreviewPage() {
 
   const segments = useMemo(() => splitPreviewText(previewText, chars), [previewText, chars]);
   const missing = useMemo(() => missingChars(previewText, chars), [previewText, chars]);
+  // 絵文字などは一覧に追加できないので、分けて出す
+  const { addable, unsupported } = useMemo(() => classifyMissing(missing), [missing]);
 
   if (outlineCount === 0 || !family) {
     return (
@@ -95,12 +97,12 @@ export function PreviewPage() {
   };
 
   const addMissing = () => {
-    const { accepted } = parseInputChars(missing.join(""));
     const store = useProjectStore.getState();
-    const added = store.addChars(accepted);
-    const first = accepted[0];
+    // 追加できる文字（絵文字などを除く）だけを追加し、実際に追加した数を知らせる
+    const added = store.addChars(addable);
+    const first = addable[0];
     if (first) store.setCurrentChar(first);
-    notify(addMissingMessage(added, accepted), added.length > 0 ? "success" : "info");
+    notify(addMissingMessage(added, addable), added.length > 0 ? "success" : "info");
     router.push(projectHref("/editor", projectId));
   };
 
@@ -223,12 +225,24 @@ export function PreviewPage() {
           <p className="text-sm text-green-800">文章の文字はすべて作成済みです</p>
         ) : (
           <>
-            <p className="text-lg tracking-wider break-all">{missing.join(" ")}</p>
-            <div>
-              <button type="button" className="btn btn-primary" onClick={addMissing}>
-                入力ページに追加して描く
-              </button>
-            </div>
+            {addable.length > 0 && (
+              <>
+                <p className="text-lg tracking-wider break-all" data-testid="missing-addable">
+                  {addable.join(" ")}
+                </p>
+                <div>
+                  <button type="button" className="btn btn-primary" onClick={addMissing}>
+                    入力ページに追加して描く
+                  </button>
+                </div>
+              </>
+            )}
+            {unsupported.length > 0 && (
+              <p className="text-sm text-slate-600" data-testid="missing-unsupported">
+                対応していない文字（絵文字・結合文字など）は、フォントに追加できません：
+                <span className="ml-1 tracking-wider break-all">{unsupported.join(" ")}</span>
+              </p>
+            )}
           </>
         )}
       </section>

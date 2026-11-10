@@ -1,5 +1,7 @@
-/** 未作成の判定から外す文字：改行・半角スペース・全角スペース（仕様 8.2） */
-const EXCLUDED = new Set(["\n", "\r", " ", "　"]);
+import { parseInputChars } from "./chars";
+
+/** 未作成の判定から外す文字：改行・半角スペース・全角スペースなどの空白と、制御文字（仕様 8.2。文字一覧にも追加しない文字） */
+const EXCLUDED = /^[\p{White_Space}\p{Cc}\p{Cf}]$/u;
 
 export interface PreviewSegment {
   text: string;
@@ -7,7 +9,7 @@ export interface PreviewSegment {
   missing: boolean;
 }
 
-const isMissing = (c: string, created: ReadonlySet<string>) => !EXCLUDED.has(c) && !created.has(c);
+const isMissing = (c: string, created: ReadonlySet<string>) => !EXCLUDED.test(c) && !created.has(c);
 
 /** 文章を、作成済みの文字の並びと未作成の文字の並びに分ける（コードポイント単位） */
 export function splitPreviewText(text: string, created: ReadonlySet<string>): PreviewSegment[] {
@@ -44,4 +46,13 @@ export function addMissingMessage(added: readonly string[], requested: readonly 
     `${added.length} 文字を入力ページの一覧に追加しました` +
     (already > 0 ? `（${already} 文字はすでに一覧にあります）` : "")
   );
+}
+
+/** 未作成の文字を、入力ページの一覧に追加できる文字と、対応していない文字（絵文字・結合文字など）に分ける */
+export function classifyMissing(missing: readonly string[]): {
+  addable: string[];
+  unsupported: string[];
+} {
+  const { accepted, unsupported } = parseInputChars(missing.join(""));
+  return { addable: accepted, unsupported };
 }
