@@ -143,6 +143,31 @@ describe("saveProject / loadProject / listProjects / deleteProject", () => {
   });
 });
 
+describe("範囲外の座標（前の版で Canvas の外まで描いたもの）", () => {
+  it("ブラウザから読み込むときも捨てずに範囲（-1000〜2000）に収める", async () => {
+    const kv = memoryStore();
+    const far = {
+      points: [
+        [-5000, 100, 0.5],
+        [500, 3000, 0.5],
+      ] as [number, number, number][],
+    };
+    const p = {
+      ...sample(),
+      glyphs: { 口: { ...KUCHI, strokes: [far] } },
+      drawings: { 口: createHistory([far]) },
+    };
+    await saveProject(kv, ID_A, p, false);
+    const loaded = (await loadProject(kv, ID_A))!.project;
+    expect(loaded.glyphs["口"]!.strokes[0]!.points).toEqual([
+      [-1000, 100, 0.5],
+      [500, 2000, 0.5],
+    ]);
+    const op = loaded.drawings["口"]!.ops[0]!;
+    expect(op.type === "add" && op.stroke.points[0]).toEqual([-1000, 100, 0.5]);
+  });
+});
+
 describe("文字ごとのキー（形式 2）", () => {
   it("描いた履歴をプロジェクトと一緒に保存し、壊れた値は捨てる", async () => {
     const kv = memoryStore();

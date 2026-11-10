@@ -1,14 +1,21 @@
-import { ASCENDER } from "../glyph/constants";
+import { ASCENDER, STROKE_COORD_MAX, STROKE_COORD_MIN } from "../glyph/constants";
 import { WIN_ASCENT, WIN_DESCENT } from "../font/metrics";
 import type { PenParams, Stroke, StrokePoint } from "../../types/project";
 
 /** 前の点からこれ未満の移動は間引く（em 単位） */
 export const MIN_POINT_DISTANCE = 2;
 
-/** x, y は小数点以下 1 桁、pressure は 2 桁に丸める */
+const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
+
+/**
+ * x, y は小数点以下 1 桁、pressure は 2 桁に丸める。
+ * x, y は STROKE_COORD_MIN〜MAX（枠の外 1em まで）に、pressure は 0〜1 に収める
+ */
 export function roundPoint(x: number, y: number, pressure: number): StrokePoint {
-  const p = Math.min(1, Math.max(0, pressure));
-  return [Math.round(x * 10) / 10, Math.round(y * 10) / 10, Math.round(p * 100) / 100];
+  const cx = clamp(x, STROKE_COORD_MIN, STROKE_COORD_MAX);
+  const cy = clamp(y, STROKE_COORD_MIN, STROKE_COORD_MAX);
+  const p = clamp(pressure, 0, 1);
+  return [Math.round(cx * 10) / 10, Math.round(cy * 10) / 10, Math.round(p * 100) / 100];
 }
 
 /**
