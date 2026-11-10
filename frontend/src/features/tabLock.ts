@@ -14,7 +14,7 @@ type Message = { type: "takeover"; id: string };
 
 /** このタブで持っているロック（プロジェクトの ID → 手放す関数） */
 const held = new Map<string, () => void>();
-/** ページを移る（入力 → プレビュー）とロックを持つ部品が作り直されるので、手放すのを少し待つ（プロジェクトごと） */
+/** プロジェクトを閉じて・切り替えてから、手放すのを少し待つ（その間に同じプロジェクトを開き直せば手放さない。プロジェクトごと） */
 const releaseTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const RELEASE_DELAY_MS = 1000;
 let channel: BroadcastChannel | null = null;
@@ -53,10 +53,12 @@ function getChannel(): BroadcastChannel {
     channel = new BroadcastChannel(CHANNEL);
     // ほかのタブから「引き継いで」と頼まれたら、保存を済ませてからロックを手放し、このタブでの編集を止める
     channel.onmessage = async (e: MessageEvent<Message>) => {
-      if (e.data.type !== "takeover" || !held.has(e.data.id)) return;
-      useTabLockStore.getState().set("released");
+      const { id } = e.data;
+      if (e.data.type !== "takeover" || !held.has(id)) return;
+      // 待っている保存を、まだロックを持っているうちに書いてから、編集を止める
       await flushProjectSave();
-      release(e.data.id);
+      useTabLockStore.getState().set("released", id);
+      release(id);
     };
   }
   return channel;
@@ -66,38 +68,44 @@ function getChannel(): BroadcastChannel {
 export async function takeOverProject(id: string): Promise<void> {
   if (!supported()) return;
   const store = useTabLockStore.getState();
-  store.set("pending");
+  store.set("pending", id);
   getChannel().postMessage({ type: "takeover", id } satisfies Message);
   await lock(id, true);
   await reloadProject(id);
-  useTabLockStore.getState().set("owner");
+  useTabLockStore.getState().set("owner", id);
 }
 
-/** プロジェクトを開いている間、ロックを持つ。取れなければ blocked（ほかのタブで編集している） */
+/**
+ * プロジェクトを開いている間（使い方ページに移っても）、ロックを持つ。取れなければ blocked（ほかのタブで編集している）。
+ * AppShell で、開いているプロジェクトの ID を渡して 1 回だけ使う
+ */
 export function useProjectLock(id: string | null): void {
   useEffect(() => {
     const store = useTabLockStore.getState();
     if (!supported()) {
-      store.set("unsupported");
+      store.set("unsupported", id);
       return;
     }
-    if (!id) return;
-    // 同じプロジェクトのロックをすでに持っていれば、手放さずに使い続ける（ページを移っただけ）
+    if (!id) {
+      store.set("pending", null);
+      return;
+    }
+    // 同じプロジェクトのロックをすでに持っていれば、手放さずに使い続ける（開き直しただけ）
     if (held.has(id)) {
       clearTimeout(releaseTimers.get(id));
       releaseTimers.delete(id);
-      store.set("owner");
+      store.set("owner", id);
       return () => scheduleRelease(id);
     }
     let cancelled = false;
-    store.set("pending");
+    store.set("pending", id);
     getChannel();
     void lock(id, false).then((ok) => {
       if (cancelled) {
         if (ok) release(id);
         return;
       }
-      useTabLockStore.getState().set(ok ? "owner" : "blocked");
+      useTabLockStore.getState().set(ok ? "owner" : "blocked", id);
     });
     return () => {
       cancelled = true;

@@ -34,3 +34,17 @@ export function saveTiming(
   }
   return "later";
 }
+
+/** ブラウザの容量が足りないための失敗か（IndexedDB は QuotaExceededError で失敗する） */
+export function isQuotaError(e: unknown): boolean {
+  return (
+    typeof e === "object" && e !== null && (e as { name?: unknown }).name === "QuotaExceededError"
+  );
+}
+
+/** ブラウザに保存できなかったときに出す文言 */
+export function saveFailedMessage(quota: boolean): string {
+  return quota
+    ? "ブラウザの容量が足りないため、作業を保存できませんでした。「zip で保存」してから、使い方ページで不要なプロジェクトを削除してください"
+    : "ブラウザに作業を保存できませんでした（プライベートブラウズなどでは保存できません）。作業を失わないよう「zip で保存」してください";
+}

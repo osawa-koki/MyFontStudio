@@ -18,15 +18,16 @@ import {
   type ProjectSummary,
 } from "../lib/projects/repository";
 import { requestPersistence } from "../lib/projects/storage";
-import { saveTiming } from "../lib/projects/saving";
+import { isQuotaError, saveFailedMessage, saveTiming } from "../lib/projects/saving";
 import { useEditorStore } from "../store/editorStore";
-import { canEditInThisTab } from "../store/tabLockStore";
+import { useSaveStatusStore } from "../store/saveStatusStore";
+import { canEditInThisTab, useTabLockStore } from "../store/tabLockStore";
 import { withFreeProjectLock, withStorageLock } from "./tabLock";
 import { useProjectStore } from "../store/projectStore";
 import { notify } from "../store/uiStore";
 import type { Project } from "../types/project";
 
-/** IndexedDB（idb-keyval）。プライベートブラウズなどで使えないときは保存に失敗する（警告だけ出す） */
+/** IndexedDB（idb-keyval）。プライベートブラウズ・容量の不足などで保存に失敗したら、通知してヘッダーに出す（saveStatusStore） */
 const idb: KeyValueStore = { get, getMany, set, setMany, del, delMany, keys };
 
 /** 保存したことのあるプロジェクトの ID（中身が空になっても保存し続ける） */
@@ -51,9 +52,28 @@ function enqueue(op: () => Promise<void>, track = true): Promise<void> {
   return writes;
 }
 
-/** IndexedDB への書き込みが終わっていない（または 500ms 待っている）保存があるか */
+/**
+ * IndexedDB への書き込みが終わっていない（または 500ms 待っている）保存があるか。
+ * 保存に失敗したままのとき（保存できていない変更があるとき）も true
+ */
 export function hasPendingSave(): boolean {
-  return pendingWrites > 0 || saveLater.pending();
+  return pendingWrites > 0 || saveLater.pending() || useSaveStatusStore.getState().failed;
+}
+
+/** 保存に失敗した。続けて失敗しているあいだは通知を重ねない（容量の不足に変わったときだけ、改めて知らせる） */
+function onSaveFailed(e: unknown): void {
+  const quota = isQuotaError(e);
+  const status = useSaveStatusStore.getState();
+  if (!status.failed || (quota && !status.quota)) notify(saveFailedMessage(quota), "error");
+  status.set({ failed: true, quota });
+}
+
+/** 保存に成功した。失敗していたなら、状態を戻して知らせる */
+function onSaveSucceeded(): void {
+  const status = useSaveStatusStore.getState();
+  if (!status.failed) return;
+  status.set({ failed: false, quota: false });
+  notify("ブラウザに保存できるようになりました", "success");
 }
 
 /** ブラウザに永続化を頼んだか（1 回の表示で 1 回だけ頼む） */
@@ -67,13 +87,22 @@ function askPersistenceOnce(): void {
 }
 
 function save(id: string, project: Project, dirty: boolean): Promise<void> {
+  // このタブでロックを持っていなければ書かない（500ms 待っている間にほかのタブに移った・ロックを取る前など）。
+  // ロックが取れたら、その間の変更を保存する（useProjectPersistence）
+  if (!canEditInThisTab(id)) return writes;
   // 文字が 1 つもない新しいプロジェクトは、一覧を散らかさないよう保存しない
   if (!stored.has(id) && !hasContent(project)) return writes;
   stored.add(id);
   askPersistenceOnce();
   return enqueue(async () => {
-    await saveProject(idb, id, project, dirty, new Date(), lastSaved.get(id));
+    try {
+      await saveProject(idb, id, project, dirty, new Date(), lastSaved.get(id));
+    } catch (e) {
+      onSaveFailed(e);
+      throw e;
+    }
     lastSaved.set(id, project);
+    onSaveSucceeded();
   });
 }
 
@@ -136,7 +165,7 @@ export function useProjectPersistence(): void {
     }, false);
     const unsubscribe = useProjectStore.subscribe((state, prev) => {
       // いつ保存するかは lib/projects/saving.ts（ほかのタブで編集しているプロジェクトは、古い内容で上書きしないよう保存しない）
-      const timing = saveTiming(state, prev, canEditInThisTab());
+      const timing = saveTiming(state, prev, canEditInThisTab(state.projectId));
       if (timing === "none" || !state.projectId) return;
       if (timing === "now") {
         saveLater.cancel();
@@ -145,10 +174,20 @@ export function useProjectPersistence(): void {
         saveLater(state.projectId, state.project, state.dirty);
       }
     });
+    // ロックが取れたら（プロジェクトを開いた直後・引き継いだとき）、取れるまでの変更を保存する
+    const unsubscribeLock = useTabLockStore.subscribe((lock, prev) => {
+      if (lock.status === prev.status && lock.projectId === prev.projectId) return;
+      const { projectId, project, dirty } = useProjectStore.getState();
+      if (!projectId || !canEditInThisTab(projectId) || lastSaved.get(projectId) === project)
+        return;
+      saveLater.cancel();
+      void save(projectId, project, dirty);
+    });
     const onHide = () => saveLater.flush();
     window.addEventListener("pagehide", onHide);
     return () => {
       unsubscribe();
+      unsubscribeLock();
       saveLater.flush();
       window.removeEventListener("pagehide", onHide);
     };
