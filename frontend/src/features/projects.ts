@@ -1,9 +1,10 @@
-import { del, delMany, get, getMany, set, setMany } from "idb-keyval";
+import { del, delMany, get, getMany, keys, set, setMany } from "idb-keyval";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { nextUncreated } from "../lib/project/chars";
 import {
   SAVE_DELAY_MS,
+  cleanupOrphanKeys,
   createProjectId,
   debounce,
   deleteProject,
@@ -13,7 +14,10 @@ import {
   loadProject,
   migrateLegacyAutosave,
   saveProject,
+  ProjectUnreadableError,
+  unreadableMessage,
   type KeyValueStore,
+  type UnreadableReason,
   type ProjectSummary,
 } from "../lib/projects/repository";
 import { requestPersistence } from "../lib/projects/storage";
@@ -21,13 +25,13 @@ import { isQuotaError, saveFailedMessage, saveTiming } from "../lib/projects/sav
 import { useEditorStore } from "../store/editorStore";
 import { useSaveStatusStore } from "../store/saveStatusStore";
 import { canEditInThisTab, useTabLockStore } from "../store/tabLockStore";
-import { withStorageLock } from "./tabLock";
+import { withFreeProjectLock, withStorageLock } from "./tabLock";
 import { useProjectStore } from "../store/projectStore";
 import { notify } from "../store/uiStore";
 import type { Project } from "../types/project";
 
 /** IndexedDB（idb-keyval）。プライベートブラウズ・容量の不足などで保存に失敗したら、通知してヘッダーに出す（saveStatusStore） */
-const idb: KeyValueStore = { get, getMany, set, setMany, del, delMany };
+const idb: KeyValueStore = { get, getMany, set, setMany, del, delMany, keys };
 
 /** 保存したことのあるプロジェクトの ID（中身が空になっても保存し続ける） */
 const stored = new Set<string>();
@@ -132,15 +136,21 @@ export async function listStoredProjects(): Promise<ProjectSummary[]> {
   return list;
 }
 
-export async function deleteStoredProject(id: string): Promise<void> {
-  if (useProjectStore.getState().projectId === id) {
-    saveLater.cancel();
-    useEditorStore.getState().reset();
-    useProjectStore.getState().closeProject();
-  }
-  stored.delete(id);
-  lastSaved.delete(id);
-  await enqueue(() => deleteProject(idb, id));
+/**
+ * プロジェクトを削除する。ほかのタブで開いているときは削除せずに false を返す
+ * （削除したあとに、そのタブが古い内容を書き戻さないように）。削除の間はロックを持ち、ほかのタブで開かせない
+ */
+export async function deleteStoredProject(id: string): Promise<boolean> {
+  return withFreeProjectLock(id, async () => {
+    if (useProjectStore.getState().projectId === id) {
+      saveLater.cancel();
+      useEditorStore.getState().reset();
+      useProjectStore.getState().closeProject();
+    }
+    stored.delete(id);
+    lastSaved.delete(id);
+    await enqueue(() => deleteProject(idb, id));
+  });
 }
 
 /**
@@ -152,6 +162,11 @@ export function useProjectPersistence(): void {
     void enqueue(async () => {
       const id = await migrateLegacyAutosave(idb);
       if (id) stored.add(id);
+      // 削除・保存の途中で閉じて残った、どこからも参照されないキーを片付ける
+      const { removed, restored } = await cleanupOrphanKeys(idb);
+      if (removed > 0) console.info(`参照されないデータを ${removed} 個消しました`);
+      if (restored > 0)
+        console.info(`一覧になかったプロジェクトを ${restored} 個、一覧に戻しました`);
     }, false);
     const unsubscribe = useProjectStore.subscribe((state, prev) => {
       // いつ保存するかは lib/projects/saving.ts（ほかのタブで編集しているプロジェクトは、古い内容で上書きしないよう保存しない）
@@ -192,12 +207,16 @@ function openLoaded(project: Project, id: string, dirty: boolean) {
   store.setCurrentChar(nextUncreated(project.queue, project.glyphs, null));
 }
 
-export type ProjectUrlState = "ready" | "loading" | "invalid";
+export type ProjectUrlState =
+  | { state: "ready" | "loading" | "invalid" }
+  /** 保存してあるのに読めない（空のプロジェクトとして開かない。そのキーには書き込まない） */
+  | { state: "unreadable"; reason: UnreadableReason };
 
 /**
  * URL の ?uuid= のプロジェクトを開く（入力ページ・プレビューで使う。Suspense の中で使う）
  * - uuid がない：開いているプロジェクトがあればその uuid、なければ新しいプロジェクトを作って URL に付ける
  * - 保存してあれば読み込む。保存していない（文字を追加する前にリロードしたなど）なら、その uuid で新しく始める
+ * - 保存してあるのに読めなければ unreadable（理由付き。空のプロジェクトとして始めると、元のデータを上書きするため）
  * - uuid の形が正しくなければ invalid
  */
 export function useProjectFromUrl(): ProjectUrlState {
@@ -205,7 +224,7 @@ export function useProjectFromUrl(): ProjectUrlState {
   const projectId = useProjectStore((s) => s.projectId);
   const router = useRouter();
   const pathname = usePathname();
-  const [failed, setFailed] = useState<string | null>(null);
+  const [failed, setFailed] = useState<{ uuid: string; reason: UnreadableReason } | null>(null);
 
   useEffect(() => {
     if (!uuid) {
@@ -233,22 +252,33 @@ export function useProjectFromUrl(): ProjectUrlState {
           );
         }
       })
-      .catch(() => {
-        if (!cancelled) setFailed(uuid);
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        console.warn("プロジェクトを読み込めませんでした", e);
+        setFailed({ uuid, reason: e instanceof ProjectUnreadableError ? e.reason : "error" });
       });
     return () => {
       cancelled = true;
     };
   }, [uuid, pathname, router]);
 
-  if (uuid && (!isProjectId(uuid) || failed === uuid)) return "invalid";
-  return uuid && uuid === projectId ? "ready" : "loading";
+  if (uuid && !isProjectId(uuid)) return { state: "invalid" };
+  if (uuid && failed?.uuid === uuid) return { state: "unreadable", reason: failed.reason };
+  return { state: uuid && uuid === projectId ? "ready" : "loading" };
 }
 
 /** 保存されている最新の内容でプロジェクトを開き直す（ほかのタブから編集を引き継いだとき） */
 export async function reloadProject(id: string): Promise<void> {
   await flushProjectSave();
-  const loaded = await loadProject(idb, id);
+  let loaded;
+  try {
+    loaded = await loadProject(idb, id);
+  } catch (e) {
+    // 読めなければ、今開いている内容のまま（読めない内容で上書きしない）
+    const reason = e instanceof ProjectUnreadableError ? e.reason : "error";
+    notify(`保存されている最新の内容を読み込めませんでした。${unreadableMessage(reason)}`, "error");
+    return;
+  }
   if (!loaded) return;
   stored.add(id);
   lastSaved.set(id, loaded.project);

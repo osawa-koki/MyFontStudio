@@ -18,6 +18,7 @@ import { countGlyphs } from "../lib/project/project";
 import { useFontStore } from "../store/fontStore";
 import { TEXT_COLORS, usePreviewStore, type MissingMode } from "../store/previewStore";
 import { useProjectStore } from "../store/projectStore";
+import { useBusyMessage } from "../store/taskStore";
 import { notify } from "../store/uiStore";
 
 const MISSING_MODES: { id: MissingMode; label: string; help: string }[] = [
@@ -45,6 +46,8 @@ export function PreviewPage() {
   const glyphCount = useProjectStore((s) => countGlyphs(s.project));
   const settings = usePreviewStore();
   const router = useRouter();
+  // ほかの重い処理が動いている間は、ダウンロードを押せない
+  const busyTask = useBusyMessage();
 
   // プロジェクトを開いて初めてプレビューを表示したとき、文章が空なら、作成済みの文字を連結したものから始める
   // （1 回だけ。利用者が消して空にした文章は埋め直さない）。
@@ -285,10 +288,22 @@ export function PreviewPage() {
       </section>
 
       <section aria-label="ダウンロード" className="flex flex-wrap gap-2">
-        <button type="button" className="btn btn-primary" onClick={() => void downloadFont("ttf")}>
+        <button
+          type="button"
+          className="btn btn-primary"
+          disabled={busyTask !== null}
+          title={busyTask ?? undefined}
+          onClick={() => void downloadFont("ttf")}
+        >
           .ttf をダウンロード（Word 向け・推奨）
         </button>
-        <button type="button" className="btn" onClick={() => void downloadFont("otf")}>
+        <button
+          type="button"
+          className="btn"
+          disabled={busyTask !== null}
+          title={busyTask ?? undefined}
+          onClick={() => void downloadFont("otf")}
+        >
           .otf をダウンロード
         </button>
       </section>

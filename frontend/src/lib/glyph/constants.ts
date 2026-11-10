@@ -23,3 +23,10 @@ export const SIMPLIFY_TOLERANCES = [0.8, 1.6, 3.2, 6.4, 12.8, 25.6] as const;
 export const MAX_GLYPH_POINTS = 3000;
 /** これより小さい輪郭（平方単位）は消す */
 export const MIN_CONTOUR_AREA = 4;
+
+/**
+ * ストロークの点の座標の範囲（Canvas の em 座標）。枠（0〜1000）の外にはみ出した描画は保持するが（仕様 5.3）、
+ * フォントの座標（16 ビット）に収まるよう、枠の外 1em までに収める。zip・ブラウザから読み込むときもこの範囲で確かめる
+ */
+export const STROKE_COORD_MIN = -1000;
+export const STROKE_COORD_MAX = 2000;

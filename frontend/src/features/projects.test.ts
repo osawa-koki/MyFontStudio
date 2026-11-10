@@ -23,6 +23,7 @@ vi.mock("idb-keyval", () => ({
   },
   del: async (k: string) => void db.delete(k),
   delMany: async (ks: string[]) => ks.forEach((k) => db.delete(k)),
+  keys: async () => [...db.keys()],
 }));
 
 // next/navigation の URL を差し替える
@@ -59,6 +60,7 @@ const kv = {
   setMany: async () => {},
   del: async () => {},
   delMany: async () => {},
+  keys: async () => [],
 };
 const store = () => useProjectStore.getState();
 const stroke = { points: [[1, 1, 0.5]] as [number, number, number][] };
@@ -178,6 +180,37 @@ describe("useProjectPersistence", () => {
   });
 });
 
+describe("ほかのタブで開いているプロジェクトの削除", () => {
+  afterEach(() => {
+    delete (navigator as { locks?: unknown }).locks;
+  });
+
+  it("ほかのタブがロックを持っていれば削除せずに false。持っていなければロックを持ったまま削除する", async () => {
+    const id = await openAsNewProject({ ...store().project, queue: ["口"], glyphs: { 口: KUCHI } });
+    store().closeProject();
+    let othersHold = true;
+    const requested: string[] = [];
+    // Web Locks API の代わり：プロジェクトのロックは、ほかのタブが持っているかで決まる
+    Object.defineProperty(navigator, "locks", {
+      configurable: true,
+      value: {
+        request: async (name: string, a: unknown, b?: (l: unknown) => Promise<unknown>) => {
+          requested.push(name);
+          if (typeof a === "function") return (a as () => Promise<unknown>)();
+          return b!(name.endsWith(id) && othersHold ? null : { name });
+        },
+      },
+    });
+    expect(await deleteStoredProject(id)).toBe(false);
+    expect(db.has(projectKey(id))).toBe(true);
+    othersHold = false;
+    expect(await deleteStoredProject(id)).toBe(true);
+    expect(db.has(projectKey(id))).toBe(false);
+    expect(db.has(glyphKey(id, "口"))).toBe(false);
+    expect(requested).toContain(`myfontstudio:project:${id}`);
+  });
+});
+
 describe("保存の失敗", () => {
   const toasts = () => useUiStore.getState().toasts.map((t) => [t.kind, t.message]);
 
@@ -251,7 +284,26 @@ describe("useProjectFromUrl", () => {
   it("uuid の形が正しくなければ invalid", () => {
     nav.search = "uuid=../x";
     const { result } = renderHook(() => useProjectFromUrl());
-    expect(result.current).toBe("invalid");
+    expect(result.current).toEqual({ state: "invalid" });
+  });
+
+  it("保存してあるのに読めなければ、空のプロジェクトとして開かず、元のデータを上書きしない", async () => {
+    const { unmount } = renderHook(() => useProjectPersistence());
+    const id = await openAsNewProject({ ...store().project, queue: ["口"], glyphs: { 口: KUCHI } });
+    useProjectStore.getState().closeProject();
+    // 新しい版の形式で保存されている（デプロイの前に開いた画面など）
+    const meta = db.get(projectKey(id)) as Record<string, unknown>;
+    db.set(projectKey(id), { ...meta, version: 99 });
+    nav.search = `uuid=${id}`;
+    const { result } = renderHook(() => useProjectFromUrl());
+    await waitFor(() => expect(result.current).toEqual({ state: "unreadable", reason: "newer" }));
+    expect(store().projectId).toBeNull();
+    // 何か操作しても、そのプロジェクトのキーには書き込まない
+    act(() => void store().addChars(["十"]));
+    await flushProjectSave();
+    expect((db.get(projectKey(id)) as { version: number }).version).toBe(99);
+    expect(db.has(glyphKey(id, "口"))).toBe(true);
+    unmount();
   });
 
   it("保存してあれば読み込み、保存していなければ新しく始めて知らせる", async () => {
@@ -259,14 +311,14 @@ describe("useProjectFromUrl", () => {
     useProjectStore.getState().closeProject();
     nav.search = `uuid=${id}`;
     const { result } = renderHook(() => useProjectFromUrl());
-    expect(result.current).toBe("loading");
-    await waitFor(() => expect(result.current).toBe("ready"));
+    expect(result.current).toEqual({ state: "loading" });
+    await waitFor(() => expect(result.current).toEqual({ state: "ready" }));
     expect(store().project.queue).toEqual(["口"]);
 
     const missing = "1c9f7d5f-3a2b-4d4c-8e6f-8b7c6d5e4f30";
     nav.search = `uuid=${missing}`;
     const next = renderHook(() => useProjectFromUrl());
-    await waitFor(() => expect(next.result.current).toBe("ready"));
+    await waitFor(() => expect(next.result.current).toEqual({ state: "ready" }));
     expect(store().projectId).toBe(missing);
     expect(
       useUiStore

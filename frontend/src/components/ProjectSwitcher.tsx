@@ -82,7 +82,12 @@ export function ProjectSwitcher() {
         aria-haspopup="menu"
         aria-expanded={open}
         onKeyDown={onButtonKeyDown}
-        aria-label={`プロジェクト：${projectId ? font.familyName : "未選択"}（クリックで切り替え）`}
+        // 読み上げの名前に、見えている文字をそのまま含める
+        aria-label={`プロジェクト：${
+          projectId
+            ? font.familyName + (font.familyNameJa ? `（${font.familyNameJa}）` : "")
+            : "プロジェクトを選ぶ"
+        }（クリックで切り替え）`}
         onClick={toggle}
       >
         <span className="truncate">

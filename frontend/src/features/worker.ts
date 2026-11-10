@@ -1,6 +1,6 @@
 import { ArchiveError } from "../lib/archive/common";
 import { renderOutlinePng } from "../lib/glyph/png";
-import { useTaskStore } from "../store/taskStore";
+import { busyMessage, useTaskStore } from "../store/taskStore";
 import type { WorkerRequest, WorkerResponse } from "../workers/font.worker";
 import type { Task, TaskResult } from "../workers/tasks";
 
@@ -8,6 +8,16 @@ import type { Task, TaskResult } from "../workers/tasks";
 export class TaskCancelledError extends Error {
   constructor() {
     super("取り消しました");
+  }
+}
+
+/**
+ * 進み具合を出す処理（label 付き）が、ほかに動いている。進み具合の表示と「取り消す」は 1 つだけなので、
+ * 同時には動かさない（取り消すと Worker ごと止めるので、ほかの処理まで止まってしまうため）
+ */
+export class TaskBusyError extends Error {
+  constructor(label: string) {
+    super(busyMessage(label));
   }
 }
 
@@ -113,6 +123,7 @@ export async function runInWorker<T extends Task>(
 ): Promise<TaskResult<T>> {
   const id = nextId++;
   const tasks = useTaskStore.getState();
+  if (options.label && tasks.task) throw new TaskBusyError(tasks.task.label);
   if (options.label) {
     tasks.set({ id, label: options.label, done: 0, total: 0, cancel: terminate });
   }
