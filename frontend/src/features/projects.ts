@@ -19,7 +19,7 @@ import {
 import { requestPersistence } from "../lib/projects/storage";
 import { saveTiming } from "../lib/projects/saving";
 import { useEditorStore } from "../store/editorStore";
-import { canEditInThisTab } from "../store/tabLockStore";
+import { canEditInThisTab, useTabLockStore } from "../store/tabLockStore";
 import { withStorageLock } from "./tabLock";
 import { useProjectStore } from "../store/projectStore";
 import { notify } from "../store/uiStore";
@@ -66,6 +66,9 @@ function askPersistenceOnce(): void {
 }
 
 function save(id: string, project: Project, dirty: boolean): Promise<void> {
+  // このタブでロックを持っていなければ書かない（500ms 待っている間にほかのタブに移った・ロックを取る前など）。
+  // ロックが取れたら、その間の変更を保存する（useProjectPersistence）
+  if (!canEditInThisTab(id)) return writes;
   // 文字が 1 つもない新しいプロジェクトは、一覧を散らかさないよう保存しない
   if (!stored.has(id) && !hasContent(project)) return writes;
   stored.add(id);
@@ -126,7 +129,7 @@ export function useProjectPersistence(): void {
     }, false);
     const unsubscribe = useProjectStore.subscribe((state, prev) => {
       // いつ保存するかは lib/projects/saving.ts（ほかのタブで編集しているプロジェクトは、古い内容で上書きしないよう保存しない）
-      const timing = saveTiming(state, prev, canEditInThisTab());
+      const timing = saveTiming(state, prev, canEditInThisTab(state.projectId));
       if (timing === "none" || !state.projectId) return;
       if (timing === "now") {
         saveLater.cancel();
@@ -135,10 +138,20 @@ export function useProjectPersistence(): void {
         saveLater(state.projectId, state.project, state.dirty);
       }
     });
+    // ロックが取れたら（プロジェクトを開いた直後・引き継いだとき）、取れるまでの変更を保存する
+    const unsubscribeLock = useTabLockStore.subscribe((lock, prev) => {
+      if (lock.status === prev.status && lock.projectId === prev.projectId) return;
+      const { projectId, project, dirty } = useProjectStore.getState();
+      if (!projectId || !canEditInThisTab(projectId) || lastSaved.get(projectId) === project)
+        return;
+      saveLater.cancel();
+      void save(projectId, project, dirty);
+    });
     const onHide = () => saveLater.flush();
     window.addEventListener("pagehide", onHide);
     return () => {
       unsubscribe();
+      unsubscribeLock();
       saveLater.flush();
       window.removeEventListener("pagehide", onHide);
     };
