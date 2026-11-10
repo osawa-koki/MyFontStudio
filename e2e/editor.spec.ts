@@ -409,3 +409,34 @@ test("絞り込み・並び替えをしていると、保存したあとの移�
   await expect(page.getByText(/表示している文字は、すべて作成しました/)).toBeVisible();
   await expect(page.getByTestId("current-char")).toHaveText("字");
 });
+
+test("線を消した作成済みの文字は、移動・zip で保存のときに未作成に戻ることを示す", async ({
+  page,
+}) => {
+  await page.goto("./editor");
+  await page.getByLabel("追加する文字列").fill("あい");
+  await page.getByLabel("追加する文字列").press("ControlOrMeta+Enter");
+  await drawStroke(page, [
+    [200, 500],
+    [800, 500],
+  ]);
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await chip(page, "あ").click();
+  await page.getByRole("button", { name: "クリア" }).click();
+
+  // 移動のときは「未作成に戻して移動」。「そのまま移動」なら字形は残る
+  await chip(page, "い").click();
+  const move = page.getByRole("dialog", { name: "「あ」は保存されていません" });
+  await expect(move.getByRole("button", { name: "未作成に戻して移動" })).toBeVisible();
+  await expect(move.getByRole("button", { name: "保存して移動" })).toHaveCount(0);
+  await move.getByRole("button", { name: "そのまま移動" }).click();
+  await expect(page.getByLabel("登録済み文字数")).toHaveText("1 文字");
+
+  // zip で保存の確認では、未作成に戻ってフォントから消えることを分けて示す
+  await page.getByRole("button", { name: "zip で保存" }).click();
+  const prompt = page.getByRole("dialog", { name: "この文字も保存しますか？" });
+  await expect(prompt).toContainText("線をすべて消した作成済みの文字があります：あ");
+  await expect(prompt).toContainText("フォントからも消えます");
+  await prompt.getByRole("button", { name: "キャンセル" }).click();
+  await expect(page.getByLabel("登録済み文字数")).toHaveText("1 文字");
+});

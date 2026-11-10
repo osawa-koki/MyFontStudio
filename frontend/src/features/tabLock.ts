@@ -70,12 +70,12 @@ function getChannel(): BroadcastChannel {
 /**
  * このタブで編集できるようにする（ほかのタブの編集を止めてもらい、最新の内容を読み直す）。
  * 待っている間は takeover（編集画面を出さない）。TAKEOVER_TIMEOUT_MS たってもロックが取れなければ
- * （ほかのタブが凍結されている・古い版で応答しないなど）、待つのをやめて blocked に戻し、takeoverFailed を立てる
+ * （ほかのタブが凍結されている・古い版で応答しないなど）、待つのをやめて blocked に戻し、takeoverFailedId にこのプロジェクトを入れる
  */
 export async function takeOverProject(id: string): Promise<void> {
   if (!supported()) return;
   const store = useTabLockStore.getState();
-  store.setTakeoverFailed(false);
+  store.setTakeoverFailed(null);
   store.set("takeover", id);
   getChannel().postMessage({ type: "takeover", id } satisfies Message);
   const controller = new AbortController();
@@ -84,7 +84,7 @@ export async function takeOverProject(id: string): Promise<void> {
   clearTimeout(timer);
   if (!ok) {
     useTabLockStore.getState().set("blocked", id);
-    useTabLockStore.getState().setTakeoverFailed(true);
+    useTabLockStore.getState().setTakeoverFailed(id);
     return;
   }
   await reloadProject(id);

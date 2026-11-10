@@ -18,9 +18,12 @@ interface TabLockState {
   projectId: string | null;
   /** projectId を省略すると、今のプロジェクトのまま状態だけを変える */
   set(status: TabLockStatus, projectId?: string | null): void;
-  /** 引き継ぎを頼んだが、ほかのタブが応答せずロックを取れなかった（もう一度試すかを出す） */
-  takeoverFailed: boolean;
-  setTakeoverFailed(failed: boolean): void;
+  /**
+   * 引き継ぎを頼んだが、ほかのタブが応答せずロックを取れなかったプロジェクト（もう一度試すかを出す）。
+   * プロジェクトごとに持つ（別のプロジェクトを開いたときに、まだ試していないのに出さないように）
+   */
+  takeoverFailedId: string | null;
+  setTakeoverFailed(projectId: string | null): void;
 }
 
 export const useTabLockStore = create<TabLockState>()((set) => ({
@@ -28,8 +31,8 @@ export const useTabLockStore = create<TabLockState>()((set) => ({
   projectId: null,
   set: (status, projectId) =>
     set((s) => ({ status, projectId: projectId === undefined ? s.projectId : projectId })),
-  takeoverFailed: false,
-  setTakeoverFailed: (takeoverFailed) => set({ takeoverFailed }),
+  takeoverFailedId: null,
+  setTakeoverFailed: (takeoverFailedId) => set({ takeoverFailedId }),
 }));
 
 /**
@@ -57,3 +60,9 @@ export const useLockedOut = (): boolean =>
 /** ほかのタブで編集しているときの説明（ボタンの title などに使う） */
 export const LOCKED_OUT_MESSAGE =
   "このプロジェクトはほかのタブで編集しています。このタブで使うには「このタブで編集する」を押してください";
+
+/** このプロジェクトで、引き継ぎを頼んだがほかのタブが応答しなかったか（ほかのプロジェクトの失敗では true にしない） */
+export const takeoverFailedFor = (
+  state: Pick<TabLockState, "takeoverFailedId">,
+  projectId: string | null,
+): boolean => projectId !== null && state.takeoverFailedId === projectId;

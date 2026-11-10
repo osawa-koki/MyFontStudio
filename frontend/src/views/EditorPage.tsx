@@ -132,15 +132,20 @@ export function EditorPage() {
   const goTo = async (target: string | null) => {
     if (!target || target === char) return;
     if (char && dirty) {
+      // 作成済みの文字の線をすべて消したときは、保存すると未作成に戻る（そのことをボタンと文言で示す）
+      const reverting = strokes.length === 0 && isCreated(glyphs, char);
       const { value } = await askDialog({
         title: `「${char}」は保存されていません`,
-        message:
-          "描いた線をどうしますか？「そのまま移動」すると、描きかけのまま残ります（あとで戻って続きを描けます）。",
+        message: reverting
+          ? "線をすべて消しました。「未作成に戻して移動」すると、作成済みの字形を消して未作成に戻します（描いた線は「元に戻す」で戻せます）。「そのまま移動」すると、字形は残ります。"
+          : "描いた線をどうしますか？「そのまま移動」すると、描きかけのまま残ります（あとで戻って続きを描けます）。",
         buttons: [
           { label: "キャンセル", value: "cancel" },
           { label: "破棄して移動", value: "discard", variant: "danger" },
           { label: "そのまま移動", value: "keep" },
-          { label: "保存して移動", value: "save", variant: "primary" },
+          reverting
+            ? { label: "未作成に戻して移動", value: "save", variant: "danger" }
+            : { label: "保存して移動", value: "save", variant: "primary" },
         ],
         cancelValue: "cancel",
       });

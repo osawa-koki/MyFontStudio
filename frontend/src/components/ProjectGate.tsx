@@ -6,7 +6,7 @@ import { useProjectFromUrl } from "../features/projects";
 import { unreadableMessage } from "../lib/projects/repository";
 import { takeOverProject } from "../features/tabLock";
 import { useProjectStore } from "../store/projectStore";
-import { useTabLockStore } from "../store/tabLockStore";
+import { takeoverFailedFor, useTabLockStore } from "../store/tabLockStore";
 
 /** URL の ?uuid= のプロジェクトを開いてから中身を表示する */
 export function ProjectGate({ children }: { children: ReactNode }) {
@@ -15,7 +15,8 @@ export function ProjectGate({ children }: { children: ReactNode }) {
   const projectId = useProjectStore((s) => s.projectId);
   // ロックは AppShell で、開いているプロジェクトについて取る
   const lock = useTabLockStore((s) => (s.projectId === projectId ? s.status : "pending"));
-  const takeoverFailed = useTabLockStore((s) => s.takeoverFailed);
+  // 引き継げなかったのが、このプロジェクトのときだけ出す
+  const takeoverFailed = useTabLockStore((s) => takeoverFailedFor(s, projectId));
   if (state === "invalid") {
     return (
       <section className="flex flex-col items-center gap-4 py-16 text-center">
