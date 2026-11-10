@@ -6,7 +6,13 @@ import { useRouter } from "next/navigation";
 import { downloadFont } from "../features/actions";
 import { NotdefBox } from "../components/NotdefBox";
 import { projectHref } from "../lib/projects/repository";
-import { classifyMissing, missingChars, splitPreviewText } from "../lib/project/preview";
+import {
+  addMissingMessage,
+  classifyMissing,
+  createdText,
+  missingChars,
+  splitPreviewText,
+} from "../lib/project/preview";
 import { useFontStore } from "../store/fontStore";
 import { TEXT_COLORS, usePreviewStore, type MissingMode } from "../store/previewStore";
 import { useProjectStore } from "../store/projectStore";
@@ -36,14 +42,25 @@ export function PreviewPage() {
   const settings = usePreviewStore();
   const router = useRouter();
 
-  // 文章が空なら、作成済みの文字を連結したものから始める。
+  // プロジェクトを開いて初めてプレビューを表示したとき、文章が空なら、作成済みの文字を連結したものから始める
+  // （1 回だけ。利用者が消して空にした文章は埋め直さない）。
   // フォントの作り直し（300ms 後）を待たずに決まるよう、フォントではなくグリフから選ぶ
+  const textInitialized = usePreviewStore((s) =>
+    projectId ? s.textInitialized.has(projectId) : true,
+  );
   useEffect(() => {
-    const created = queue.filter((c) => (glyphs[c]?.strokes.length ?? 0) > 0);
-    if (previewText === "" && created.length > 0) {
-      setPreviewText(created.join(""), { dirty: false });
+    if (!projectId || textInitialized) return;
+    const mark = () => usePreviewStore.getState().markTextInitialized(projectId);
+    if (previewText !== "") {
+      mark();
+      return;
     }
-  }, [previewText, glyphs, queue, setPreviewText]);
+    const initial = createdText(queue, glyphs);
+    // 作成済みの文字がまだなければ、できたときに入れる
+    if (initial === "") return;
+    setPreviewText(initial, { dirty: false });
+    mark();
+  }, [projectId, textInitialized, previewText, glyphs, queue, setPreviewText]);
 
   const segments = useMemo(() => splitPreviewText(previewText, chars), [previewText, chars]);
   const missing = useMemo(() => missingChars(previewText, chars), [previewText, chars]);
@@ -81,10 +98,11 @@ export function PreviewPage() {
 
   const addMissing = () => {
     const store = useProjectStore.getState();
-    store.addChars(addable);
+    // 追加できる文字（絵文字などを除く）だけを追加し、実際に追加した数を知らせる
+    const added = store.addChars(addable);
     const first = addable[0];
     if (first) store.setCurrentChar(first);
-    notify(`${addable.length} 文字を入力ページの一覧に追加しました`, "success");
+    notify(addMissingMessage(added, addable), added.length > 0 ? "success" : "info");
     router.push(projectHref("/editor", projectId));
   };
 

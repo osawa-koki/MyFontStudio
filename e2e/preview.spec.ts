@@ -44,6 +44,11 @@ test("保存した文字が手書きのフォントで表示され、未作成�
     .replaceAll('"', "");
   expect(await page.evaluate((f) => document.fonts.check(`24px "${f}"`, "大"), family)).toBe(true);
 
+  // 文章を空にしても、作成済みの文字で埋め直さない（初期値を入れるのは、開いて初めて表示したときだけ）
+  await textarea.fill("");
+  await page.waitForTimeout(500);
+  await expect(textarea).toHaveValue("");
+
   await textarea.fill("大澤太郎\n大 澤");
   await expect(area.locator("[data-missing]")).toHaveText(["太郎"]);
   const missing = page.getByRole("region", { name: "未作成の文字" });
