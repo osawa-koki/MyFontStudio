@@ -1,4 +1,7 @@
 import { useRef, useState } from "react";
+import { listStoredProjects } from "../features/projects";
+import { sameFamilyName, sameFamilyNameMessage } from "../lib/projects/display";
+import type { ProjectSummary } from "../lib/projects/repository";
 import { FAMILY_NAME_MAX, sanitizeFamilyName } from "../lib/project/project";
 import { useProjectStore } from "../store/projectStore";
 import { LOCKED_OUT_MESSAGE, useLockedOut } from "../store/tabLockStore";
@@ -8,13 +11,18 @@ export function FontSettingsButton() {
   const font = useProjectStore((s) => s.project.font);
   const setFontSettings = useProjectStore((s) => s.setFontSettings);
   const ref = useRef<HTMLDialogElement>(null);
+  const projectId = useProjectStore((s) => s.projectId);
   const [form, setForm] = useState(font);
+  // 同じフォント名のほかのプロジェクトを知らせるため、開いたときに一覧を読む
+  const [others, setOthers] = useState<readonly ProjectSummary[]>([]);
   const lockedOut = useLockedOut();
 
   const open = () => {
     setForm(font);
     ref.current?.showModal();
+    void listStoredProjects().then(setOthers);
   };
+  const same = sameFamilyName(form.familyName, others, projectId);
   const familyValid =
     sanitizeFamilyName(form.familyName) === form.familyName && form.familyName !== "";
 
@@ -65,6 +73,11 @@ export function FontSettingsButton() {
             />
             {!familyValid && (
               <span className="text-xs text-red-600">英数字だけで入力してください</span>
+            )}
+            {familyValid && same.length > 0 && (
+              <span className="text-xs text-amber-800" role="status">
+                {sameFamilyNameMessage(form.familyName, same)}
+              </span>
             )}
           </label>
           <label className="flex flex-col gap-1 text-sm">
