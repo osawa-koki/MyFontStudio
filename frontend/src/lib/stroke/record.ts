@@ -1,4 +1,6 @@
-import type { StrokePoint } from "../../types/project";
+import { ASCENDER } from "../glyph/constants";
+import { WIN_ASCENT, WIN_DESCENT } from "../font/metrics";
+import type { PenParams, Stroke, StrokePoint } from "../../types/project";
 
 /** 前の点からこれ未満の移動は間引く（em 単位） */
 export const MIN_POINT_DISTANCE = 2;
@@ -49,4 +51,43 @@ export function resolvePressure(
   if (!usePressure) return { pressure: 0.5, simulate: false };
   if (pointerType === "pen") return { pressure: pressure > 0 ? pressure : 0.5, simulate: false };
   return { pressure: 0.5, simulate: true };
+}
+
+/** 左右は枠の外のこの幅まで記録する（em 単位。半角の文字の送り幅は描いた幅で決まるので、左右は欠けない） */
+export const DRAW_SIDE_MARGIN = 200;
+
+/**
+ * 描いた点を記録する範囲（Canvas の em 座標）。枠の外にはみ出した描画は保持するが（仕様 5.3）、
+ * 上下は Windows で欠けない範囲（usWinAscent・usWinDescent の内側。Canvas の y=-120〜1080）から、
+ * 線の太さの半分（筆圧で最も太くなったとき）を引いた範囲に収める
+ */
+export function drawingBounds(pen: Pick<PenParams, "size" | "thinning">): {
+  xMin: number;
+  xMax: number;
+  yMin: number;
+  yMax: number;
+} {
+  // perfect-freehand の線の半径は size × (0.5 − thinning × (0.5 − pressure))。pressure は 0〜1
+  const radius = pen.size * (0.5 + Math.abs(pen.thinning) * 0.5);
+  return {
+    xMin: -DRAW_SIDE_MARGIN,
+    xMax: 1000 + DRAW_SIDE_MARGIN,
+    yMin: ASCENDER - WIN_ASCENT + radius,
+    yMax: ASCENDER + WIN_DESCENT - radius,
+  };
+}
+
+/** 点を、記録する範囲（drawingBounds）に収める */
+export function clampToDrawingArea(
+  x: number,
+  y: number,
+  pen: Pick<PenParams, "size" | "thinning">,
+): [number, number] {
+  const b = drawingBounds(pen);
+  return [Math.min(b.xMax, Math.max(b.xMin, x)), Math.min(b.yMax, Math.max(b.yMin, y))];
+}
+
+/** 枠（0〜1000）の外に出た点のある線があるか（Canvas では枠の外は見えないので、知らせるのに使う） */
+export function hasStrokeOutsideFrame(strokes: readonly Stroke[]): boolean {
+  return strokes.some((s) => s.points.some(([x, y]) => x < 0 || x > 1000 || y < 0 || y > 1000));
 }

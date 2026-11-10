@@ -12,9 +12,9 @@ describe("saveTiming", () => {
     expect(saveTiming({ ...s, projectId: "b" }, s, true)).toBe("none");
     expect(saveTiming(s, s, true)).toBe("none");
   });
-  it("文字・グリフ・描いた線・設定が変わればすぐ", () => {
+  it("文字・グリフ・描いた線・フォントの設定が変わればすぐ", () => {
     const s = base();
-    for (const key of ["queue", "glyphs", "drawings", "font", "defaults"] as const) {
+    for (const key of ["queue", "glyphs", "drawings", "font"] as const) {
       const project = {
         ...s.project,
         [key]: Array.isArray(s.project[key]) ? [] : { ...s.project[key] },
@@ -28,6 +28,13 @@ describe("saveTiming", () => {
       "later",
     );
     expect(saveTiming({ ...s, dirty: true }, s, true)).toBe("later");
+  });
+  it("ペンの設定（太さ・筆圧・お手本）は待ってまとめる（スライダーはドラッグ中に何度も変わる）", () => {
+    const s = base();
+    const defaults = { ...s.project.defaults, pen: { ...s.project.defaults.pen, size: 60 } };
+    expect(saveTiming({ ...s, project: { ...s.project, defaults }, dirty: true }, s, true)).toBe(
+      "later",
+    );
   });
 });
 

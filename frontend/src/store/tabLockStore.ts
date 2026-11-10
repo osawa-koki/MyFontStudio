@@ -3,7 +3,7 @@ import { create } from "zustand";
 /**
  * このタブが、開いているプロジェクトを編集できるか（同じプロジェクトを編集できるタブは 1 つだけ）
  * - unsupported：Web Locks API がない（確かめられないので、いつも編集できる）
- * - pending：確かめている・引き継いでいる途中
+ * - pending：確かめている・引き継いでいる途中（まだ保存しない。ロックが取れたら、その間の変更を保存する）
  * - owner：このタブで編集している
  * - blocked：ほかのタブで編集している（あとから開いた）
  * - released：ほかのタブに引き継いだ（このタブでは編集を止めた）
@@ -12,19 +12,39 @@ export type TabLockStatus = "unsupported" | "pending" | "owner" | "blocked" | "r
 
 interface TabLockState {
   status: TabLockStatus;
-  set(status: TabLockStatus): void;
+  /** status がどのプロジェクトについてのものか（プロジェクトを切り替えた直後に、前のプロジェクトのロックで保存しないように） */
+  projectId: string | null;
+  /** projectId を省略すると、今のプロジェクトのまま状態だけを変える */
+  set(status: TabLockStatus, projectId?: string | null): void;
 }
 
 export const useTabLockStore = create<TabLockState>()((set) => ({
   status: "pending",
-  set: (status) => set({ status }),
+  projectId: null,
+  set: (status, projectId) =>
+    set((s) => ({ status, projectId: projectId === undefined ? s.projectId : projectId })),
 }));
 
 /**
- * 保存してよいか。ほかのタブで編集しているとき（blocked・released）だけ保存しない。
- * pending（ページを移ってロックを取り直している途中など）は保存する（その間の変更が保存されずに残らないように）
+ * このプロジェクトを、このタブで保存してよいか。ロックを持っている（owner）ときだけ。
+ * Web Locks API がなければ確かめられないので、いつも保存する
  */
-export const canEditInThisTab = () => {
-  const { status } = useTabLockStore.getState();
-  return status !== "blocked" && status !== "released";
+export const canEditInThisTab = (projectId: string | null): boolean => {
+  const { status, projectId: locked } = useTabLockStore.getState();
+  if (status === "unsupported") return true;
+  return status === "owner" && projectId !== null && locked === projectId;
 };
+
+/** ほかのタブで編集しているので、このタブではプロジェクトを変える操作（設定・書き出しなど）をさせないか */
+export const isLockedOut = (): boolean => {
+  const { status } = useTabLockStore.getState();
+  return status === "blocked" || status === "released";
+};
+
+/** 画面用：isLockedOut */
+export const useLockedOut = (): boolean =>
+  useTabLockStore((s) => s.status === "blocked" || s.status === "released");
+
+/** ほかのタブで編集しているときの説明（ボタンの title などに使う） */
+export const LOCKED_OUT_MESSAGE =
+  "このプロジェクトはほかのタブで編集しています。このタブで使うには「このタブで編集する」を押してください";

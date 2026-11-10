@@ -1,6 +1,6 @@
 // 性能の確認（仕様 10.1）：グリフ保存からプレビュー反映まで、300 文字で 0.5 秒・2,000 文字で 2 秒以内。
 // ダミーの手書きデータ（1 文字 6 本・各 40 点ほど）で、輪郭の計算とフォントの生成にかかる時間を測る。
-// 使い方：npm run perf
+// 使い方：npm run perf（CI では PERF_LIMIT_FACTOR で上限に係数を掛ける。GitHub Actions のマシンは手元より遅く、ばらつくため）
 import { buildFont, collectOutlines } from "../src/lib/font/build";
 import { createEmptyProject } from "../src/lib/project/project";
 import type { GlyphData, Stroke } from "../src/types/project";
@@ -110,5 +110,54 @@ async function measureSave(count: number, limitMs: number) {
   return ok;
 }
 
-const results = [measure(300, 500), measure(2000, 2000), await measureSave(2000, 50)];
+/**
+ * zip の保存（Web Worker の処理。PNG は Node では描かないので除く）。
+ * Worker に渡したプロジェクトは structuredClone されて別のオブジェクトになり、輪郭のキャッシュが当たらない。
+ * 画面のスレッドでキャッシュした輪郭を渡したとき（今の処理）と、Worker で計算し直したとき（前の処理）を比べる
+ */
+async function measureZip(count: number, limitMs: number) {
+  const { runTask } = await import("../src/workers/tasks");
+  const project = createEmptyProject();
+  for (let i = 0; i < count; i++) {
+    const char = String.fromCodePoint(0x4e00 + i);
+    project.queue.push(char);
+    project.glyphs[char] = dummyGlyph(char, i + 1);
+  }
+  // 画面のスレッドでは、プレビュー用のフォントを作るときに輪郭を計算してある
+  const outlines = collectOutlines(project);
+  const task = () => ({
+    kind: "saveZip" as const,
+    savedAt: "",
+    exportCount: 1,
+    withPreviews: false,
+    ...structuredClone({ project, outlines }),
+  });
+  let t = performance.now();
+  await runTask(task());
+  const ms = performance.now() - t;
+  t = performance.now();
+  collectOutlines(structuredClone(project));
+  const recompute = performance.now() - t;
+  const ok = ms <= limitMs;
+  console.log(
+    `${count} 文字：zip の保存 ${Math.round(ms)}ms（上限 ${limitMs}ms）${ok ? "OK" : "NG"}。` +
+      `Worker で輪郭を計算し直すと、さらに ${Math.round(recompute)}ms かかる`,
+  );
+  return ok;
+}
+
+/** 上限に掛ける係数（既定は 1。仕様 10.1 の目安そのもの） */
+const factor = Number(process.env.PERF_LIMIT_FACTOR ?? "1");
+if (!(factor >= 1))
+  throw new Error(`PERF_LIMIT_FACTOR は 1 以上の数：${process.env.PERF_LIMIT_FACTOR}`);
+if (factor !== 1) console.log(`上限に ${factor} を掛けて確かめる（PERF_LIMIT_FACTOR）`);
+const limit = (ms: number) => ms * factor;
+
+const results = [
+  measure(300, limit(500)),
+  measure(2000, limit(2000)),
+  await measureSave(2000, limit(50)),
+  await measureZip(2000, limit(10000)),
+  await measureZip(5000, limit(20000)),
+];
 if (results.includes(false)) process.exit(1);

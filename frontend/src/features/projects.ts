@@ -13,14 +13,17 @@ import {
   loadProject,
   migrateLegacyAutosave,
   saveProject,
+  ProjectUnreadableError,
+  unreadableMessage,
   type KeyValueStore,
+  type UnreadableReason,
   type ProjectSummary,
 } from "../lib/projects/repository";
 import { requestPersistence } from "../lib/projects/storage";
 import { isQuotaError, saveFailedMessage, saveTiming } from "../lib/projects/saving";
 import { useEditorStore } from "../store/editorStore";
 import { useSaveStatusStore } from "../store/saveStatusStore";
-import { canEditInThisTab } from "../store/tabLockStore";
+import { canEditInThisTab, useTabLockStore } from "../store/tabLockStore";
 import { withStorageLock } from "./tabLock";
 import { useProjectStore } from "../store/projectStore";
 import { notify } from "../store/uiStore";
@@ -86,6 +89,9 @@ function askPersistenceOnce(): void {
 }
 
 function save(id: string, project: Project, dirty: boolean): Promise<void> {
+  // このタブでロックを持っていなければ書かない（500ms 待っている間にほかのタブに移った・ロックを取る前など）。
+  // ロックが取れたら、その間の変更を保存する（useProjectPersistence）
+  if (!canEditInThisTab(id)) return writes;
   // 文字が 1 つもない新しいプロジェクトは、一覧を散らかさないよう保存しない
   if (!stored.has(id) && !hasContent(project)) return writes;
   stored.add(id);
@@ -152,7 +158,7 @@ export function useProjectPersistence(): void {
     }, false);
     const unsubscribe = useProjectStore.subscribe((state, prev) => {
       // いつ保存するかは lib/projects/saving.ts（ほかのタブで編集しているプロジェクトは、古い内容で上書きしないよう保存しない）
-      const timing = saveTiming(state, prev, canEditInThisTab());
+      const timing = saveTiming(state, prev, canEditInThisTab(state.projectId));
       if (timing === "none" || !state.projectId) return;
       if (timing === "now") {
         saveLater.cancel();
@@ -161,10 +167,20 @@ export function useProjectPersistence(): void {
         saveLater(state.projectId, state.project, state.dirty);
       }
     });
+    // ロックが取れたら（プロジェクトを開いた直後・引き継いだとき）、取れるまでの変更を保存する
+    const unsubscribeLock = useTabLockStore.subscribe((lock, prev) => {
+      if (lock.status === prev.status && lock.projectId === prev.projectId) return;
+      const { projectId, project, dirty } = useProjectStore.getState();
+      if (!projectId || !canEditInThisTab(projectId) || lastSaved.get(projectId) === project)
+        return;
+      saveLater.cancel();
+      void save(projectId, project, dirty);
+    });
     const onHide = () => saveLater.flush();
     window.addEventListener("pagehide", onHide);
     return () => {
       unsubscribe();
+      unsubscribeLock();
       saveLater.flush();
       window.removeEventListener("pagehide", onHide);
     };
@@ -179,12 +195,16 @@ function openLoaded(project: Project, id: string, dirty: boolean) {
   store.setCurrentChar(nextUncreated(project.queue, project.glyphs, null));
 }
 
-export type ProjectUrlState = "ready" | "loading" | "invalid";
+export type ProjectUrlState =
+  | { state: "ready" | "loading" | "invalid" }
+  /** 保存してあるのに読めない（空のプロジェクトとして開かない。そのキーには書き込まない） */
+  | { state: "unreadable"; reason: UnreadableReason };
 
 /**
  * URL の ?uuid= のプロジェクトを開く（入力ページ・プレビューで使う。Suspense の中で使う）
  * - uuid がない：開いているプロジェクトがあればその uuid、なければ新しいプロジェクトを作って URL に付ける
  * - 保存してあれば読み込む。保存していない（文字を追加する前にリロードしたなど）なら、その uuid で新しく始める
+ * - 保存してあるのに読めなければ unreadable（理由付き。空のプロジェクトとして始めると、元のデータを上書きするため）
  * - uuid の形が正しくなければ invalid
  */
 export function useProjectFromUrl(): ProjectUrlState {
@@ -192,7 +212,7 @@ export function useProjectFromUrl(): ProjectUrlState {
   const projectId = useProjectStore((s) => s.projectId);
   const router = useRouter();
   const pathname = usePathname();
-  const [failed, setFailed] = useState<string | null>(null);
+  const [failed, setFailed] = useState<{ uuid: string; reason: UnreadableReason } | null>(null);
 
   useEffect(() => {
     if (!uuid) {
@@ -220,22 +240,33 @@ export function useProjectFromUrl(): ProjectUrlState {
           );
         }
       })
-      .catch(() => {
-        if (!cancelled) setFailed(uuid);
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        console.warn("プロジェクトを読み込めませんでした", e);
+        setFailed({ uuid, reason: e instanceof ProjectUnreadableError ? e.reason : "error" });
       });
     return () => {
       cancelled = true;
     };
   }, [uuid, pathname, router]);
 
-  if (uuid && (!isProjectId(uuid) || failed === uuid)) return "invalid";
-  return uuid && uuid === projectId ? "ready" : "loading";
+  if (uuid && !isProjectId(uuid)) return { state: "invalid" };
+  if (uuid && failed?.uuid === uuid) return { state: "unreadable", reason: failed.reason };
+  return { state: uuid && uuid === projectId ? "ready" : "loading" };
 }
 
 /** 保存されている最新の内容でプロジェクトを開き直す（ほかのタブから編集を引き継いだとき） */
 export async function reloadProject(id: string): Promise<void> {
   await flushProjectSave();
-  const loaded = await loadProject(idb, id);
+  let loaded;
+  try {
+    loaded = await loadProject(idb, id);
+  } catch (e) {
+    // 読めなければ、今開いている内容のまま（読めない内容で上書きしない）
+    const reason = e instanceof ProjectUnreadableError ? e.reason : "error";
+    notify(`保存されている最新の内容を読み込めませんでした。${unreadableMessage(reason)}`, "error");
+    return;
+  }
   if (!loaded) return;
   stored.add(id);
   lastSaved.set(id, loaded.project);
