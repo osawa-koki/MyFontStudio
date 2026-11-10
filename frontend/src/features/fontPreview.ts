@@ -15,13 +15,14 @@ export async function rebuildPreviewFont(): Promise<void> {
   const my = ++generation;
   const { project } = useProjectStore.getState();
   const set = useFontStore.getState().set;
+  set({ status: "building" });
   try {
     // キャッシュのない輪郭（zip の読み込み直後など）をたくさん計算しても画面を止めないよう、区切って計算する
     const outlines = await collectOutlinesAsync(project, { cancelled: () => my !== generation });
     if (!outlines) return;
     if (outlines.length === 0) {
       unregisterPreviewFont();
-      set({ family: null, outlineCount: 0, chars: new Set(), error: null });
+      set({ family: null, outlineCount: 0, chars: new Set(), status: "ready", error: null });
       return;
     }
     // フォントの生成は Web Worker で行う（画面を止めない）
@@ -39,6 +40,7 @@ export async function rebuildPreviewFont(): Promise<void> {
       family,
       outlineCount: outlines.length,
       chars: new Set(outlines.map((o) => o.char)),
+      status: "ready",
       error: null,
     });
   } catch (e) {
@@ -50,7 +52,9 @@ export async function rebuildPreviewFont(): Promise<void> {
       return;
     }
     console.error("フォントの生成に失敗しました", e);
-    if (my === generation) set({ error: e instanceof Error ? e.message : String(e) });
+    // 前に作ったフォント（family・chars）は残し、プレビューで「前のフォントで表示している」と出す
+    if (my === generation)
+      set({ status: "error", error: e instanceof Error ? e.message : String(e) });
   }
 }
 
@@ -64,6 +68,11 @@ export function useFontPreview(): void {
     // プロジェクトを切り替えたときは待たずに作り直す（前のプロジェクトのフォントが残らないように）
     const switched = lastProject.current !== projectId;
     lastProject.current = projectId;
+    if (switched) {
+      generation++; // 前のプロジェクトの生成の結果は使わない
+      unregisterPreviewFont();
+      useFontStore.getState().reset();
+    }
     const timer = window.setTimeout(
       () => void rebuildPreviewFont(),
       switched ? 0 : REBUILD_DELAY_MS,
