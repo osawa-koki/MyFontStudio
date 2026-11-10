@@ -1,6 +1,7 @@
 import { downloadFont } from "../features/actions";
 import { useFontStore } from "../store/fontStore";
 import { LOCKED_OUT_MESSAGE, useLockedOut } from "../store/tabLockStore";
+import { useBusyMessage } from "../store/taskStore";
 import { useMenuButton } from "./useMenuButton";
 
 const ITEM =
@@ -12,7 +13,9 @@ export function FontDownloadMenu() {
   const { open, toggle, close, rootRef, buttonRef, menuRef, onButtonKeyDown, onMenuKeyDown } =
     useMenuButton();
   const lockedOut = useLockedOut();
-  const disabled = outlineCount === 0 || lockedOut;
+  // ほかの重い処理（zip の保存・読み込み）が動いている間は押せない
+  const busyTask = useBusyMessage();
+  const disabled = outlineCount === 0 || lockedOut || busyTask !== null;
   const pick = (format: "ttf" | "otf") => {
     close();
     void downloadFont(format);
@@ -26,9 +29,11 @@ export function FontDownloadMenu() {
         title={
           lockedOut
             ? LOCKED_OUT_MESSAGE
-            : outlineCount === 0
-              ? "まだ文字がありません"
-              : "Word で使うなら .ttf"
+            : busyTask
+              ? busyTask
+              : outlineCount === 0
+                ? "まだ文字がありません"
+                : "Word で使うなら .ttf"
         }
         onClick={() => void downloadFont("ttf")}
       >

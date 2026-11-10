@@ -17,8 +17,10 @@ vi.mock("./worker", () => {
       super("cancelled");
     }
   }
+  class TaskBusyError extends Error {}
   return {
     TaskCancelledError,
+    TaskBusyError,
     runInWorker: (task: { exportCount: number }) =>
       new Promise((resolve, reject) => mocks.pending.push({ task, resolve, reject })),
   };

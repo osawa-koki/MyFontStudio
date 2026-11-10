@@ -3,7 +3,7 @@ import type { FontFormat } from "../lib/font/build";
 import { collectOutlinesAsync } from "../lib/font/outlines";
 import { LOCKED_OUT_MESSAGE, isLockedOut } from "../store/tabLockStore";
 import { notify } from "../store/uiStore";
-import { TaskCancelledError, runInWorker } from "./worker";
+import { TaskBusyError, TaskCancelledError, runInWorker } from "./worker";
 import { useProjectStore } from "../store/projectStore";
 
 const MIME: Record<FontFormat, string> = { ttf: "font/ttf", otf: "font/otf" };
@@ -34,6 +34,10 @@ export async function downloadFont(format: FontFormat): Promise<void> {
     useProjectStore.getState().recordExport(exportCount);
   } catch (e) {
     if (e instanceof TaskCancelledError) return;
+    if (e instanceof TaskBusyError) {
+      notify(e.message);
+      return;
+    }
     console.error(e);
     notify(`フォントを作れませんでした：${e instanceof Error ? e.message : String(e)}`, "error");
   }
