@@ -179,7 +179,7 @@ test("重い処理は Web Worker で行い、進み具合を出して取り消�
   }
   const buffer = Buffer.from(await zip.generateAsync({ type: "uint8array" }));
 
-  const workerLoaded = page.waitForRequest(/\/workers\/font\.worker\.js$/);
+  const workerLoaded = page.waitForRequest(/\/workers\/font\.worker-[A-Za-z0-9]+\.js$/);
   await page.goto("./");
   await page
     .getByTestId("zip-input")
