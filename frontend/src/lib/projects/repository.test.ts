@@ -5,6 +5,7 @@ import { KUCHI, dot } from "../testing/fixtures";
 import {
   INDEX_KEY,
   LEGACY_AUTOSAVE_KEY,
+  cleanupOrphanKeys,
   createProjectId,
   debounce,
   deleteProject,
@@ -31,6 +32,7 @@ function memoryStore(): KeyValueStore & { data: Map<string, unknown> } {
     set: async (k, v) => void data.set(k, structuredClone(v)),
     setMany: async (entries) => entries.forEach(([k, v]) => data.set(k, structuredClone(v))),
     del: async (k) => void data.delete(k),
+    keys: async () => [...data.keys()],
   };
 }
 
@@ -187,6 +189,57 @@ describe("文字ごとのキー（形式 2）", () => {
     await saveProject(kv, ID_A, p, false);
     await deleteProject(kv, ID_A);
     expect([...kv.data.keys()]).toEqual([INDEX_KEY]);
+  });
+});
+
+describe("ほかのタブでの削除と、参照されないキー", () => {
+  it("前回の保存のあとにメタデータが消えていたら（ほかのタブで削除）、差分ではなく全体を書き直す", async () => {
+    const kv = memoryStore();
+    const p = {
+      ...sample(),
+      glyphs: { 口: KUCHI, 十: { ...KUCHI, char: "十", codepoint: "U+5341" } },
+    };
+    await saveProject(kv, ID_A, p, false);
+    await deleteProject(kv, ID_A);
+    // 「口」だけを変えて、前回の内容（p）を渡して保存する
+    const next = { ...p, glyphs: { ...p.glyphs, 口: { ...KUCHI, updatedAt: "x" } } };
+    await saveProject(kv, ID_A, next, false, new Date(), p);
+    const loaded = await loadProject(kv, ID_A);
+    expect(Object.keys(loaded!.project.glyphs).sort()).toEqual(["十", "口"].sort());
+  });
+
+  it("一覧にないプロジェクトのメタデータと、メタデータが参照しないグリフ・履歴のキーを消す", async () => {
+    const kv = memoryStore();
+    const p = { ...sample(), drawings: { 口: createHistory(KUCHI.strokes) } };
+    await saveProject(kv, ID_A, p, false);
+    await saveProject(kv, ID_B, sample(), false);
+    // 削除の途中で閉じた（一覧からは外れたが、値が残った）
+    await kv.set(
+      INDEX_KEY,
+      (await listProjects(kv)).filter((s) => s.id !== ID_B),
+    );
+    // 保存の途中で閉じた（メタデータの一覧にない文字の値が残った）
+    await kv.set(glyphKey(ID_A, "未"), KUCHI);
+    await kv.set(drawingKey(ID_A, "未"), createHistory());
+    // プロジェクトと関係のないキー・形式 1 の値は触らない
+    await kv.set("other", 1);
+    const ID_C = "2d0a8e6a-4b3c-4e5d-9f70-9c8d7e6f5a41";
+    await kv.set(projectKey(ID_C), { version: 1 });
+    await kv.set(INDEX_KEY, [
+      ...(await listProjects(kv)),
+      { id: ID_C, familyName: "C", familyNameJa: "", charCount: 0, glyphCount: 0, updatedAt: "" },
+    ]);
+    await kv.set(glyphKey(ID_C, "口"), KUCHI);
+
+    expect(await cleanupOrphanKeys(kv)).toBe(4);
+    expect(kv.data.has(projectKey(ID_B))).toBe(false);
+    expect(kv.data.has(glyphKey(ID_B, "口"))).toBe(false);
+    expect(kv.data.has(glyphKey(ID_A, "未"))).toBe(false);
+    expect(kv.data.has(drawingKey(ID_A, "未"))).toBe(false);
+    expect(kv.data.has("other")).toBe(true);
+    expect(kv.data.has(glyphKey(ID_C, "口"))).toBe(true);
+    expect(await loadProject(kv, ID_A)).toEqual({ project: p, dirty: false });
+    expect(await cleanupOrphanKeys(kv)).toBe(0);
   });
 });
 

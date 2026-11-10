@@ -19,6 +19,7 @@ vi.mock("idb-keyval", () => ({
   },
   del: async (k: string) => void db.delete(k),
   delMany: async (ks: string[]) => ks.forEach((k) => db.delete(k)),
+  keys: async () => [...db.keys()],
 }));
 
 // next/navigation の URL を差し替える
@@ -55,6 +56,7 @@ const kv = {
   setMany: async () => {},
   del: async () => {},
   delMany: async () => {},
+  keys: async () => [],
 };
 const store = () => useProjectStore.getState();
 const stroke = { points: [[1, 1, 0.5]] as [number, number, number][] };
@@ -113,6 +115,37 @@ describe("useProjectPersistence", () => {
     act(() => void store().addChars(["あ"]));
     await flushProjectSave();
     expect(db.has(projectKey(id))).toBe(false);
+  });
+});
+
+describe("ほかのタブで開いているプロジェクトの削除", () => {
+  afterEach(() => {
+    delete (navigator as { locks?: unknown }).locks;
+  });
+
+  it("ほかのタブがロックを持っていれば削除せずに false。持っていなければロックを持ったまま削除する", async () => {
+    const id = await openAsNewProject({ ...store().project, queue: ["口"], glyphs: { 口: KUCHI } });
+    store().closeProject();
+    let othersHold = true;
+    const requested: string[] = [];
+    // Web Locks API の代わり：プロジェクトのロックは、ほかのタブが持っているかで決まる
+    Object.defineProperty(navigator, "locks", {
+      configurable: true,
+      value: {
+        request: async (name: string, a: unknown, b?: (l: unknown) => Promise<unknown>) => {
+          requested.push(name);
+          if (typeof a === "function") return (a as () => Promise<unknown>)();
+          return b!(name.endsWith(id) && othersHold ? null : { name });
+        },
+      },
+    });
+    expect(await deleteStoredProject(id)).toBe(false);
+    expect(db.has(projectKey(id))).toBe(true);
+    othersHold = false;
+    expect(await deleteStoredProject(id)).toBe(true);
+    expect(db.has(projectKey(id))).toBe(false);
+    expect(db.has(glyphKey(id, "口"))).toBe(false);
+    expect(requested).toContain(`myfontstudio:project:${id}`);
   });
 });
 

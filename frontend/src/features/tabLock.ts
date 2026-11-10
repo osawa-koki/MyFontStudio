@@ -118,6 +118,23 @@ function scheduleRelease(id: string): void {
   );
 }
 
+/**
+ * ほかのタブがプロジェクトを開いていなければ、ロックを持ったまま op を実行する（プロジェクトの削除）。
+ * ロックを持っている間は、ほかのタブで開いても編集できない。ほかのタブが開いていて実行しなかったら false
+ */
+export async function withFreeProjectLock(id: string, op: () => Promise<void>): Promise<boolean> {
+  // このタブで開いている（ロックを持っている）なら、そのまま実行する
+  if (!hasLocks() || held.has(id)) {
+    await op();
+    return true;
+  }
+  return navigator.locks.request(lockName(id), { ifAvailable: true }, async (l) => {
+    if (!l) return false;
+    await op();
+    return true;
+  }) as Promise<boolean>;
+}
+
 /** 書き込みをタブをまたいで順番に行う（一覧の読み書きが、ほかのタブの書き込みと混ざらないように） */
 export function withStorageLock<T>(op: () => Promise<T>): Promise<T> {
   if (!hasLocks()) return op();

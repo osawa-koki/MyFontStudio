@@ -18,6 +18,8 @@ export interface KeyValueStore {
   setMany(entries: [string, unknown][]): Promise<void>;
   del(key: string): Promise<void>;
   delMany(keys: string[]): Promise<void>;
+  /** すべてのキー（参照されないキーの片付けに使う） */
+  keys(): Promise<unknown[]>;
 }
 
 export const INDEX_KEY = "myfontstudio:projects";
@@ -206,6 +208,9 @@ export async function saveProject(
   previous?: Project,
 ): Promise<void> {
   if (!isProjectId(id)) throw new Error("プロジェクトの ID が正しくない");
+  // 前回の保存のあとにメタデータが消えていたら（ほかのタブで削除されたなど）、差分ではなく全体を書き直す。
+  // 差分だけを書くと、変わっていない文字のグリフ・描いた履歴が消えたままになり、文字が欠けたプロジェクトになる
+  if (previous && (await kv.get(projectKey(id))) === undefined) previous = undefined;
   const glyphChars = Object.keys(project.glyphs).filter((c) => Array.from(c).length === 1);
   const drawingChars = Object.keys(project.drawings).filter((c) => Array.from(c).length === 1);
   const entries: [string, unknown][] = [];
@@ -259,6 +264,51 @@ export async function deleteProject(kv: KeyValueStore, id: string): Promise<void
       ]
     : [];
   await kv.delMany([...keys, projectKey(id)]);
+}
+
+const PROJECT_PREFIX = "myfontstudio:project:";
+const CHAR_KEY = /^myfontstudio:project:([0-9a-f-]{36}):(glyph|drawing):(U\+[0-9A-F]{4,6})$/;
+const META_KEY = /^myfontstudio:project:([0-9a-f-]{36})$/;
+
+/**
+ * どこからも参照されないキーを消す。消したキーの数を返す
+ * - 一覧にないプロジェクトのメタデータ（削除の途中で閉じたもの。保存は一覧とメタデータを 1 つのトランザクションで書く）
+ * - メタデータのない、またはメタデータの文字の一覧にないグリフ・描いた履歴（削除・保存の途中で閉じたもの）
+ */
+export async function cleanupOrphanKeys(kv: KeyValueStore): Promise<number> {
+  const keys = (await kv.keys()).filter(
+    (k): k is string => typeof k === "string" && k.startsWith(PROJECT_PREFIX),
+  );
+  const listed = new Set((await listProjects(kv)).map((s) => s.id));
+  const metaIds = keys.flatMap((k) => META_KEY.exec(k)?.[1] ?? []);
+  const metas = new Map<string, { glyph: Set<string>; drawing: Set<string> }>();
+  const values = await kv.getMany(metaIds.map(projectKey));
+  const orphans: string[] = [];
+  const untouched = new Set<string>();
+  metaIds.forEach((id, i) => {
+    const meta = metaSchema.safeParse(values[i]);
+    if (!listed.has(id)) {
+      orphans.push(projectKey(id));
+      return;
+    }
+    // 読めないメタデータ（形式 1 など）のプロジェクトは、文字のキーも触らない
+    if (!meta.success) {
+      untouched.add(id);
+      return;
+    }
+    const labels = (chars: string[]) => new Set(singleChars(chars).map(toCodepointLabel));
+    metas.set(id, { glyph: labels(meta.data.glyphChars), drawing: labels(meta.data.drawingChars) });
+  });
+  for (const k of keys) {
+    const m = CHAR_KEY.exec(k);
+    if (!m) continue;
+    const [, id, kind, label] = m;
+    if (untouched.has(id!)) continue;
+    const meta = metas.get(id!);
+    if (!meta || !meta[kind as "glyph" | "drawing"].has(label!)) orphans.push(k);
+  }
+  if (orphans.length > 0) await kv.delMany(orphans);
+  return orphans.length;
 }
 
 /**

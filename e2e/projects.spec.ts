@@ -293,3 +293,30 @@ test("同じプロジェクトを 2 つのタブで開くと、編集できる�
   ).toBeVisible();
   await second.close();
 });
+
+test("ほかのタブで開いているプロジェクトは削除できず、そのタブを閉じれば削除できる", async ({
+  page,
+  context,
+}) => {
+  await page.goto("./");
+  await page.getByRole("button", { name: "新しくはじめる" }).click();
+  await page.getByRole("dialog").getByLabel("フォント名").fill("Shared");
+  await page.getByRole("dialog").getByRole("button", { name: "はじめる" }).click();
+  await expect(page).toHaveURL(UUID_URL);
+  await addAndDraw(page, "共");
+
+  // 2 つ目のタブの使い方ページから削除しようとしても、1 つ目のタブで開いているので削除しない
+  const second = await context.newPage();
+  await second.goto("./");
+  await second.getByRole("button", { name: "Shared を削除" }).click();
+  await second.getByRole("dialog").getByRole("button", { name: "削除" }).click();
+  await expect(second.getByText(/ほかのタブで開いているので、削除できません/)).toBeVisible();
+  await expect(second.getByRole("link", { name: "Shared を開く" })).toBeVisible();
+
+  // 1 つ目のタブを閉じれば削除できる
+  await page.close();
+  await second.getByRole("button", { name: "Shared を削除" }).click();
+  await second.getByRole("dialog").getByRole("button", { name: "削除" }).click();
+  await expect(second.getByText("プロジェクトを削除しました")).toBeVisible();
+  await expect(second.getByRole("link", { name: "Shared を開く" })).toHaveCount(0);
+});

@@ -1,9 +1,10 @@
-import { del, delMany, get, getMany, set, setMany } from "idb-keyval";
+import { del, delMany, get, getMany, keys, set, setMany } from "idb-keyval";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { nextUncreated } from "../lib/project/chars";
 import {
   SAVE_DELAY_MS,
+  cleanupOrphanKeys,
   createProjectId,
   debounce,
   deleteProject,
@@ -20,13 +21,13 @@ import { requestPersistence } from "../lib/projects/storage";
 import { saveTiming } from "../lib/projects/saving";
 import { useEditorStore } from "../store/editorStore";
 import { canEditInThisTab } from "../store/tabLockStore";
-import { withStorageLock } from "./tabLock";
+import { withFreeProjectLock, withStorageLock } from "./tabLock";
 import { useProjectStore } from "../store/projectStore";
 import { notify } from "../store/uiStore";
 import type { Project } from "../types/project";
 
 /** IndexedDB（idb-keyval）。プライベートブラウズなどで使えないときは保存に失敗する（警告だけ出す） */
-const idb: KeyValueStore = { get, getMany, set, setMany, del, delMany };
+const idb: KeyValueStore = { get, getMany, set, setMany, del, delMany, keys };
 
 /** 保存したことのあるプロジェクトの ID（中身が空になっても保存し続ける） */
 const stored = new Set<string>();
@@ -103,15 +104,21 @@ export async function listStoredProjects(): Promise<ProjectSummary[]> {
   return list;
 }
 
-export async function deleteStoredProject(id: string): Promise<void> {
-  if (useProjectStore.getState().projectId === id) {
-    saveLater.cancel();
-    useEditorStore.getState().reset();
-    useProjectStore.getState().closeProject();
-  }
-  stored.delete(id);
-  lastSaved.delete(id);
-  await enqueue(() => deleteProject(idb, id));
+/**
+ * プロジェクトを削除する。ほかのタブで開いているときは削除せずに false を返す
+ * （削除したあとに、そのタブが古い内容を書き戻さないように）。削除の間はロックを持ち、ほかのタブで開かせない
+ */
+export async function deleteStoredProject(id: string): Promise<boolean> {
+  return withFreeProjectLock(id, async () => {
+    if (useProjectStore.getState().projectId === id) {
+      saveLater.cancel();
+      useEditorStore.getState().reset();
+      useProjectStore.getState().closeProject();
+    }
+    stored.delete(id);
+    lastSaved.delete(id);
+    await enqueue(() => deleteProject(idb, id));
+  });
 }
 
 /**
@@ -123,6 +130,9 @@ export function useProjectPersistence(): void {
     void enqueue(async () => {
       const id = await migrateLegacyAutosave(idb);
       if (id) stored.add(id);
+      // 削除・保存の途中で閉じて残った、どこからも参照されないキーを片付ける
+      const removed = await cleanupOrphanKeys(idb);
+      if (removed > 0) console.info(`参照されないデータを ${removed} 個消しました`);
     }, false);
     const unsubscribe = useProjectStore.subscribe((state, prev) => {
       // いつ保存するかは lib/projects/saving.ts（ほかのタブで編集しているプロジェクトは、古い内容で上書きしないよう保存しない）
