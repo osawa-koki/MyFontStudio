@@ -113,6 +113,27 @@ describe("useProjectPersistence", () => {
     unmount();
   });
 
+  it("ペンの太さのスライダーを続けて動かしても、待ってから 1 回だけ書く", async () => {
+    vi.useFakeTimers();
+    const { unmount } = renderHook(() => useProjectPersistence());
+    const id = store().newProject("Slider");
+    act(() => void store().addChars(["口"]));
+    await vi.advanceTimersByTimeAsync(0);
+    await flushProjectSave();
+    writes.length = 0;
+    for (let size = 41; size <= 80; size++) {
+      act(() => store().setDefaults({ pen: { ...store().project.defaults.pen, size } }));
+      await vi.advanceTimersByTimeAsync(20);
+    }
+    expect(writes).toEqual([]);
+    expect(hasPendingSave()).toBe(true);
+    await vi.advanceTimersByTimeAsync(600);
+    await flushProjectSave();
+    expect(writes).toHaveLength(1);
+    expect((await loadProject(kv, id))!.project.defaults.pen.size).toBe(80);
+    unmount();
+  });
+
   it("ロックが取れるまで（pending）は保存せず、取れたらその間の変更を保存する。別のプロジェクトのロックでは保存しない", async () => {
     const { unmount } = renderHook(() => useProjectPersistence());
     const lock = useTabLockStore.getState();
