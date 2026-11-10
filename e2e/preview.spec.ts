@@ -74,3 +74,49 @@ test("保存した文字が手書きのフォントで表示され、未作成�
   await expect(page.getByTestId("current-char")).toHaveText("太");
   await expect(page.getByRole("region", { name: "文字一覧" }).getByRole("listitem")).toHaveCount(4);
 });
+
+test("未作成の文字のうち、絵文字などは追加できない文字として分けて出す。空白・タブは数えない", async ({
+  page,
+}) => {
+  await createChars(page, "大");
+  await page
+    .getByRole("navigation", { name: "ページ" })
+    .getByRole("link", { name: "プレビュー" })
+    .click();
+  const textarea = page.getByLabel("確かめたい文章");
+  await textarea.fill("大\t😀");
+  const missing = page.getByRole("region", { name: "未作成の文字" });
+  await expect(missing.getByRole("heading")).toHaveText("文章の中の未作成の文字（1 文字）");
+  await expect(missing.getByTestId("missing-unsupported")).toContainText("😀");
+  await expect(missing.getByRole("button", { name: "入力ページに追加して描く" })).toHaveCount(0);
+
+  await textarea.fill("大澤😀");
+  await expect(missing.getByTestId("missing-addable")).toHaveText("澤");
+  await missing.getByRole("button", { name: "入力ページに追加して描く" }).click();
+  await expect(page.getByText("1 文字を入力ページの一覧に追加しました")).toBeVisible();
+  await expect(page.getByTestId("current-char")).toHaveText("澤");
+});
+
+test("描きかけの文字があれば、フォントをダウンロードする前に保存するか確かめる", async ({
+  page,
+}) => {
+  await createChars(page, "大");
+  await page.getByLabel("追加する文字列").fill("澤");
+  await page.getByLabel("追加する文字列").press("ControlOrMeta+Enter");
+  await page.getByRole("button", { name: /^澤（/ }).click();
+  await drawStroke(page, [
+    [200, 200],
+    [800, 800],
+  ]);
+  // 線を描いただけでも「zip 未保存」になる（描いた履歴は zip に入る）
+  await expect(page.getByText("zip 未保存")).toBeVisible();
+
+  await page.getByRole("button", { name: "フォントをダウンロード（.ttf）" }).click();
+  const dialog = page.getByRole("dialog", { name: "この文字も保存しますか？" });
+  await expect(dialog).toContainText("澤");
+  await expect(dialog).toContainText("保存しない文字は、フォントに入りません");
+  const downloading = page.waitForEvent("download");
+  await dialog.getByRole("button", { name: "保存する" }).click();
+  await downloading;
+  await expect(page.getByLabel("登録済み文字数")).toHaveText("2 文字");
+});

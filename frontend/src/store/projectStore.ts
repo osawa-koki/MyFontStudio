@@ -154,7 +154,12 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       const current = s.project.drawings[char] ?? createHistory(s.project.glyphs[char]?.strokes);
       const next = f(current);
       if (next === current && s.project.drawings[char]) return {};
-      return { project: { ...s.project, drawings: { ...s.project.drawings, [char]: next } } };
+      // 描いた履歴は zip に入る（rawdata/history/）ので、変えたら「zip 未保存」にする
+      const changed = next !== current;
+      return {
+        project: { ...s.project, drawings: { ...s.project.drawings, [char]: next } },
+        ...(changed ? { dirty: true, revision: s.revision + 1 } : {}),
+      };
     });
   },
 
@@ -163,7 +168,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       if (!s.project.drawings[char]) return {};
       const drawings = { ...s.project.drawings };
       delete drawings[char];
-      return { project: { ...s.project, drawings } };
+      return { project: { ...s.project, drawings }, dirty: true, revision: s.revision + 1 };
     });
   },
 
