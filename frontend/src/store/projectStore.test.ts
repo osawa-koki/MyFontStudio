@@ -108,6 +108,23 @@ describe("projectStore", () => {
     expect(s().dirty).toBe(false);
   });
 
+  it("描いた履歴を変える・描きかけを捨てると「zip 未保存」にする（履歴も zip に入る）。変わらなければそのまま", () => {
+    const stroke = { points: [[1, 2, 0.5]] as [number, number, number][] };
+    s().updateDrawing("口", (h) => h);
+    expect(s().dirty).toBe(false);
+    s().updateDrawing("口", (h) => ({ ops: [...h.ops, { type: "add", stroke }], position: 1 }));
+    expect(s().dirty).toBe(true);
+    s().markSaved();
+    const revision = s().revision;
+    s().updateDrawing("口", (h) => h);
+    expect(s().dirty).toBe(false);
+    s().resetDrawing("口");
+    expect(s()).toMatchObject({ dirty: true, revision: revision + 1 });
+    s().markSaved();
+    s().resetDrawing("口");
+    expect(s().dirty).toBe(false);
+  });
+
   it("loadProject は置き換えて保存済みにする", () => {
     s().addChars(["a"]);
     const p = { ...s().project, queue: ["x"] };

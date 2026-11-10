@@ -1,4 +1,4 @@
-// 静的エクスポートした HTML の CSP（Nginx と GitHub Pages で共通）。
+// 静的エクスポートした HTML の CSP（Nginx と GitHub Pages で共通。CSP の中身はここだけに書く）。
 // Next.js が HTML に埋め込むインラインのスクリプトは、SHA-256 のハッシュで許可する（'unsafe-inline' にしない）
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
