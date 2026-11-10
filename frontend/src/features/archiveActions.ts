@@ -1,7 +1,8 @@
 import { ArchiveError, archiveFileName } from "../lib/archive/common";
 import { downloadBlob } from "../lib/download";
 import { isoWithOffset } from "../lib/project/chars";
-import { openAsNewProject } from "./projects";
+import { sameFamilyName, sameFamilyNameMessage } from "../lib/projects/display";
+import { listStoredProjects, openAsNewProject } from "./projects";
 import { useProjectStore } from "../store/projectStore";
 import { askDialog, notify } from "../store/uiStore";
 import { commitDraft } from "./glyphActions";
@@ -104,6 +105,10 @@ export async function openZip(file: File): Promise<string | null> {
     } else {
       notify(`「${file.name}」を新しいプロジェクトとして読み込みました`, "success");
     }
+    // 同じフォント名のプロジェクトがあれば知らせる（同じ zip を 2 回開いたときなど）
+    const { familyName } = project.font;
+    const same = sameFamilyName(familyName, await listStoredProjects(), id);
+    if (same.length > 0) notify(sameFamilyNameMessage(familyName, same));
     return id;
   } catch (e) {
     if (e instanceof TaskCancelledError) {

@@ -293,3 +293,42 @@ test("同じプロジェクトを 2 つのタブで開くと、編集できる�
   ).toBeVisible();
   await second.close();
 });
+
+test("同じフォント名のプロジェクトを作る・名前を変えるときは、インストールで上書きされることを知らせる", async ({
+  page,
+}) => {
+  await page.goto("./");
+  await page.getByRole("button", { name: "新しくはじめる" }).click();
+  let dialog = page.getByRole("dialog", { name: "フォント名を決めてください" });
+  await expect(dialog.getByLabel("フォント名")).toHaveValue("MyHandwriting");
+  await dialog.getByRole("button", { name: "はじめる" }).click();
+  await expect(page).toHaveURL(UUID_URL);
+
+  // 2 つ目の初期値は重ならない名前。同じ名前（大文字・小文字の違いだけ）にすると確かめる
+  await page
+    .getByRole("navigation", { name: "ページ" })
+    .getByRole("link", { name: "使い方" })
+    .click();
+  await page.getByRole("button", { name: "新しくはじめる" }).click();
+  dialog = page.getByRole("dialog", { name: "フォント名を決めてください" });
+  await expect(dialog.getByLabel("フォント名")).toHaveValue("MyHandwriting2");
+  await dialog.getByLabel("フォント名").fill("myhandwriting");
+  await dialog.getByRole("button", { name: "はじめる" }).click();
+  const same = page.getByRole("dialog", { name: "同じフォント名のプロジェクトがあります" });
+  await expect(same).toContainText("上書き");
+  // 名前を変える → 入力に戻る
+  await same.getByRole("button", { name: "名前を変える" }).click();
+  dialog = page.getByRole("dialog", { name: "フォント名を決めてください" });
+  await expect(dialog.getByLabel("フォント名")).toHaveValue("myhandwriting");
+  await dialog.getByLabel("フォント名").fill("Second");
+  await dialog.getByRole("button", { name: "はじめる" }).click();
+  await expect(page.getByRole("button", { name: /フォント名：Second/ })).toBeVisible();
+
+  // ヘッダーの「編集」で同じ名前にしようとすると知らせる
+  await page.getByRole("button", { name: /フォント名：Second/ }).click();
+  const settings = page.getByRole("dialog", { name: "フォントの設定" });
+  await settings.getByLabel(/^フォント名/).fill("MyHandwriting");
+  await expect(settings.getByRole("status")).toContainText("上書き");
+  await settings.getByLabel(/^フォント名/).fill("Third");
+  await expect(settings.getByRole("status")).toHaveCount(0);
+});
