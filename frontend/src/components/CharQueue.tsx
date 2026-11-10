@@ -1,4 +1,4 @@
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { isCreated } from "../lib/project/chars";
 import {
   KIND_LABELS,
@@ -42,6 +42,18 @@ export function CharQueue({ queue, glyphs, current, onSelect, onDelete }: Props)
     [queue, glyphs, view.sort, view.desc, view.status, view.kind, view.query],
   );
   const filtered = isFiltered(view);
+  // 編集中の文字が変わったら、一覧のその文字が見えるようにスクロールする（一覧が長いとき）。
+  // scrollIntoView はページもスクロールし、狭い画面では Canvas が画面の外に出るので、一覧の中だけを動かす
+  const listRef = useRef<HTMLUListElement>(null);
+  useEffect(() => {
+    const list = listRef.current;
+    const el = list?.querySelector<HTMLElement>('[aria-current="true"]');
+    if (!list || !el) return;
+    const l = list.getBoundingClientRect();
+    const e = el.getBoundingClientRect();
+    if (e.top < l.top) list.scrollTop -= l.top - e.top;
+    else if (e.bottom > l.bottom) list.scrollTop += e.bottom - l.bottom;
+  }, [current]);
 
   const startPress = (char: string, pointerType: string) => {
     longPressed.current = false;
@@ -136,7 +148,10 @@ export function CharQueue({ queue, glyphs, current, onSelect, onDelete }: Props)
           条件に合う文字がありません
         </p>
       ) : (
-        <ul className="flex max-h-44 flex-wrap lg:max-h-[60vh] gap-1.5 overflow-auto rounded-md border border-slate-200 bg-white p-2">
+        <ul
+          ref={listRef}
+          className="flex max-h-44 flex-wrap lg:max-h-[60vh] gap-1.5 overflow-auto rounded-md border border-slate-200 bg-white p-2"
+        >
           {shown.map((c) => {
             const glyph = glyphs[c];
             const done = isCreated(glyphs, c);

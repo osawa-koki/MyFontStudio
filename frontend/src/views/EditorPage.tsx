@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { CharQueue } from "../components/CharQueue";
 import { DrawingCanvas } from "../components/DrawingCanvas";
@@ -13,8 +13,16 @@ import { toCodepointLabel } from "../lib/project/project";
 import { projectHref } from "../lib/projects/repository";
 import { canRedo, canUndo, isDirty, strokesOf } from "../lib/stroke/history";
 import { useEditorStore, useHistory, usePen } from "../store/editorStore";
+import { isFiltered, viewQueue, type QueueViewOptions } from "../lib/project/queueView";
+import { useQueueViewStore } from "../store/queueViewStore";
 import { useProjectStore } from "../store/projectStore";
 import { askDialog, confirmDialog, notify } from "../store/uiStore";
+
+/** 文字一覧の並び替え・絞り込みの設定（保存したあとの移動を、表示している順で決めるため） */
+function viewOptions(): QueueViewOptions {
+  const { sort, desc, status, kind, query } = useQueueViewStore.getState();
+  return { sort, desc, status, kind, query };
+}
 
 /** テキスト入力やダイアログにフォーカスがあるときは、ショートカットを使わない */
 function isTyping(target: EventTarget | null): boolean {
@@ -43,6 +51,16 @@ export function EditorPage() {
   const strokes = strokesOf(history);
   const dirty = char !== null && isDirty(history, glyphs[char]?.strokes);
   const allDone = queue.length > 0 && queue.every((c) => isCreated(glyphs, c));
+  // 次へ・前へ・保存したあとの移動は、文字一覧に表示している順（並び替え・絞り込みのあと）で決める
+  const sort = useQueueViewStore((s) => s.sort);
+  const desc = useQueueViewStore((s) => s.desc);
+  const status = useQueueViewStore((s) => s.status);
+  const kind = useQueueViewStore((s) => s.kind);
+  const query = useQueueViewStore((s) => s.query);
+  const ordered = useMemo(
+    () => viewQueue(queue, glyphs, { sort, desc, status, kind, query }),
+    [queue, glyphs, sort, desc, status, kind, query],
+  );
 
   const addText = (text: string) => {
     const { accepted, unsupported } = parseInputChars(text);
@@ -83,8 +101,15 @@ export function EditorPage() {
     if (!char || !commitDraft(char)) return;
     if (advance) {
       const { project: p, setCurrentChar } = useProjectStore.getState();
-      const next = nextUncreated(p.queue, p.glyphs, char);
+      const view = viewOptions();
+      const next = nextUncreated(viewQueue(p.queue, p.glyphs, view), p.glyphs, char);
       if (next) setCurrentChar(next);
+      else if (isFiltered(view) && nextUncreated(p.queue, p.glyphs, char)) {
+        // 絞り込んでいて、表示している文字に未作成がない。黙って一覧に出ていない文字へ移らない
+        notify(
+          "表示している文字は、すべて作成しました。絞り込みを解除すると、ほかの未作成の文字に進めます",
+        );
+      }
     }
   };
 
@@ -111,8 +136,8 @@ export function EditorPage() {
     project.setCurrentChar(target);
   };
 
-  const skip = () => void goTo(nextUncreated(queue, glyphs, char));
-  const prev = () => void goTo(prevChar(queue, char));
+  const skip = () => void goTo(nextUncreated(ordered, glyphs, char));
+  const prev = () => void goTo(prevChar(ordered, char));
 
   const remove = async (c: string) => {
     const created = isCreated(glyphs, c);
@@ -293,7 +318,7 @@ export function EditorPage() {
             <button
               type="button"
               className="btn"
-              disabled={!prevChar(queue, char)}
+              disabled={!prevChar(ordered, char)}
               onClick={prev}
               title="←"
             >
@@ -304,7 +329,7 @@ export function EditorPage() {
               className="btn"
               onClick={skip}
               title="→"
-              disabled={!nextUncreated(queue, glyphs, char)}
+              disabled={!nextUncreated(ordered, glyphs, char)}
             >
               スキップ →
             </button>

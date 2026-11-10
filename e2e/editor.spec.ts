@@ -283,3 +283,39 @@ test("作成済みの文字を変えずに Enter で進んでも、保存し直�
   await expect(page.getByTestId("current-char")).toHaveText("う");
   await expect(page.getByText("zip 未保存")).toHaveCount(0);
 });
+
+test("絞り込み・並び替えをしていると、保存したあとの移動と前へ・スキップは表示している順で進む", async ({
+  page,
+}) => {
+  await page.goto("./editor");
+  await page.getByLabel("追加する文字列").fill("あ漢い字");
+  await page.getByLabel("追加する文字列").press("ControlOrMeta+Enter");
+  await expect(page.getByTestId("current-char")).toHaveText("あ");
+  // 漢字だけを、文字コード順の降順（字 U+5B57 → 漢 U+6F22 の逆）に並べる
+  await page.getByLabel("文字の種類").selectOption("kanji");
+  await page.getByLabel("並び順").selectOption("codepoint");
+  await page.getByRole("button", { name: /昇順（クリックで降順）/ }).click();
+  await chip(page, "漢").click();
+  await expect(page.getByTestId("current-char")).toHaveText("漢");
+
+  await drawStroke(page, [
+    [200, 500],
+    [800, 500],
+  ]);
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  // 登録順の次（い）ではなく、表示している順の次の未作成の文字へ
+  await expect(page.getByTestId("current-char")).toHaveText("字");
+  await page.getByRole("button", { name: "← 前へ" }).click();
+  await expect(page.getByTestId("current-char")).toHaveText("漢");
+  await page.getByRole("button", { name: "スキップ →" }).click();
+  await expect(page.getByTestId("current-char")).toHaveText("字");
+
+  // 表示している文字がすべて作成済みになったら、一覧に出ていない文字へは移らずに知らせる
+  await drawStroke(page, [
+    [200, 500],
+    [800, 500],
+  ]);
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(page.getByText(/表示している文字は、すべて作成しました/)).toBeVisible();
+  await expect(page.getByTestId("current-char")).toHaveText("字");
+});

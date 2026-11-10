@@ -56,6 +56,12 @@ describe("nextUncreated / prevChar", () => {
     expect(nextUncreated(queue, glyphs, "郎")).toBe("澤");
     expect(nextUncreated(queue, glyphs, null)).toBe("澤");
   });
+  it("表示している一覧（並び替え・絞り込みのあと）に今の文字がなければ、その一覧の先頭から探す", () => {
+    // 「漢字」で絞り込んで、文字コード順に並べたときなど
+    expect(nextUncreated(["郎", "澤"], glyphs, "大")).toBe("郎");
+    expect(prevChar(["郎", "澤"], "大")).toBeNull();
+    expect(prevChar(["郎", "澤"], "澤")).toBe("郎");
+  });
   it("未作成がほかになければ null", () => {
     expect(nextUncreated(["大", "口"], glyphs, "大")).toBeNull();
     expect(nextUncreated(["大", "澤"], glyphs, "澤")).toBeNull();
