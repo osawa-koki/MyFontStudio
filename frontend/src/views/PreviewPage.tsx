@@ -8,6 +8,8 @@ import { NotdefBox } from "../components/NotdefBox";
 import { parseInputChars } from "../lib/project/chars";
 import { projectHref } from "../lib/projects/repository";
 import { missingChars, splitPreviewText } from "../lib/project/preview";
+import { rebuildPreviewFont } from "../features/fontPreview";
+import { countGlyphs } from "../lib/project/project";
 import { useFontStore } from "../store/fontStore";
 import { TEXT_COLORS, usePreviewStore, type MissingMode } from "../store/previewStore";
 import { useProjectStore } from "../store/projectStore";
@@ -33,7 +35,9 @@ export function PreviewPage() {
   const glyphs = useProjectStore((s) => s.project.glyphs);
   const projectId = useProjectStore((s) => s.projectId);
   const setPreviewText = useProjectStore((s) => s.setPreviewText);
-  const { family, chars, outlineCount } = useFontStore();
+  const { family, chars, status, error } = useFontStore();
+  // 作成済みの文字があるかは、フォント（作っている途中・失敗したことがある）ではなくプロジェクトで数える
+  const glyphCount = useProjectStore((s) => countGlyphs(s.project));
   const settings = usePreviewStore();
   const router = useRouter();
 
@@ -49,7 +53,29 @@ export function PreviewPage() {
   const segments = useMemo(() => splitPreviewText(previewText, chars), [previewText, chars]);
   const missing = useMemo(() => missingChars(previewText, chars), [previewText, chars]);
 
-  if (outlineCount === 0 || !family) {
+  const retry = (
+    <button type="button" className="btn" onClick={() => void rebuildPreviewFont()}>
+      もう一度作る
+    </button>
+  );
+  if (glyphCount > 0 && !family && status === "error") {
+    return (
+      <section className="flex flex-col items-center gap-4 py-16 text-center" role="alert">
+        <h1 className="text-xl font-bold">プレビュー</h1>
+        <p>フォントを作れませんでした：{error}</p>
+        {retry}
+      </section>
+    );
+  }
+  if (glyphCount > 0 && !family && status !== "ready") {
+    return (
+      <section className="flex flex-col items-center gap-4 py-16 text-center">
+        <h1 className="text-xl font-bold">プレビュー</h1>
+        <p role="status">フォントを作っています…</p>
+      </section>
+    );
+  }
+  if (glyphCount === 0 || !family) {
     return (
       <section className="flex flex-col items-center gap-4 py-16 text-center">
         <h1 className="text-xl font-bold">プレビュー</h1>
@@ -91,6 +117,17 @@ export function PreviewPage() {
   return (
     <div className="flex flex-col gap-5">
       <h1 className="text-xl font-bold">プレビュー</h1>
+      {status === "error" && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-red-300 bg-red-50 p-3 text-sm"
+        >
+          <span>
+            最新の文字でフォントを作れませんでした（前に作ったフォントで表示しています）：{error}
+          </span>
+          {retry}
+        </div>
+      )}
       <label className="flex flex-col gap-1 text-sm">
         確かめたい文章
         <textarea

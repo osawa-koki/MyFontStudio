@@ -1,5 +1,6 @@
 import { downloadFont } from "../features/actions";
-import { useFontStore } from "../store/fontStore";
+import { countGlyphs } from "../lib/project/project";
+import { useProjectStore } from "../store/projectStore";
 import { useMenuButton } from "./useMenuButton";
 
 const ITEM =
@@ -7,10 +8,11 @@ const ITEM =
 
 /** ヘッダーの「フォントをダウンロード」（.ttf / .otf を選ぶ。既定は .ttf） */
 export function FontDownloadMenu() {
-  const outlineCount = useFontStore((s) => s.outlineCount);
+  // 作成済みのグリフがあれば使える（プレビュー用のフォントの生成とは関係なく、ダウンロードのときに作る）
+  const glyphCount = useProjectStore((s) => countGlyphs(s.project));
   const { open, toggle, close, rootRef, buttonRef, menuRef, onButtonKeyDown, onMenuKeyDown } =
     useMenuButton();
-  const disabled = outlineCount === 0;
+  const disabled = glyphCount === 0;
   const pick = (format: "ttf" | "otf") => {
     close();
     void downloadFont(format);
