@@ -105,7 +105,7 @@ PAGES=1 BASE_URL=http://localhost:8099/MyFontStudio/ npx playwright test --proje
 
 | 先 | トリガー | 内容 |
 |---|---|---|
-| GHCR（`ghcr.io/osawa-koki/myfontstudio`） | `main` への push のうち、`frontend/`・`nginx/`・`Dockerfile`・`.dockerignore`・`publish.yml` が変わったとき、週 1 回（月曜 3:00 JST）、手動（`publish.yml`） | linux/amd64・linux/arm64 のイメージをビルド（画面のビルドはビルドするマシンのアーキテクチャで行い、実行のステージは QEMU で作る。実行のステージはキャッシュなしで、`apk upgrade` で Alpine のセキュリティ更新を入れる）してプッシュ（タグ `main`・`sha-<コミット>`）し、Trivy でアーキテクチャごとに調べ（修正済みの CRITICAL があれば失敗）、直近の 5 つ以外のバージョンを消す。イメージ名は小文字（リポジトリ名は大文字を含むため、ワークフローで小文字にする） |
+| GHCR（`ghcr.io/osawa-koki/myfontstudio`） | `main` への push のうち、`frontend/`・`nginx/`・`Dockerfile`・`.dockerignore`・`publish.yml` が変わったとき、週 1 回（月曜 3:00 JST）、手動（`publish.yml`） | linux/amd64・linux/arm64 のイメージをビルド（画面のビルドはビルドするマシンのアーキテクチャで行い、実行のステージは QEMU で作る。実行のステージはキャッシュなしで、`apk upgrade` で Alpine のセキュリティ更新を入れる）してプッシュ（タグ `main`・`sha-<コミット>`）し、Trivy でアーキテクチャごとに調べ（修正済みの CRITICAL があれば失敗）、直近の 5 回分（タグの付いたバージョン 5 個と、それらが参照するアーキテクチャごとのマニフェスト）だけを残して古いバージョンを消す（`.github/scripts/cleanup-ghcr.sh`。マニフェストを読めなければ何も消さない）。イメージ名は小文字（リポジトリ名は大文字を含むため、ワークフローで小文字にする） |
 | Render | `main` への push のうち、`frontend/`・`nginx/`・`Dockerfile`・`.dockerignore` が変わったとき（Render 側の自動デプロイ、`render.yaml` の `buildFilter`） | `render.yaml` の設定で Docker イメージをビルドして動かす |
 | GitHub Pages（https://osawa-koki.github.io/MyFontStudio/ ） | `main` への push のうち、`frontend/`・`pages.yml` が変わったとき、手動（`pages.yml`） | `BASE_PATH=/MyFontStudio`（Next.js の `basePath`）でビルドし、`frontend/out` をデプロイする |
 
