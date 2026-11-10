@@ -27,3 +27,21 @@ export function missingChars(text: string, created: ReadonlySet<string>): string
   for (const c of Array.from(text)) if (isMissing(c, created)) out.add(c);
   return [...out];
 }
+
+/** 作成済みの文字を一覧の順に連結したもの（プレビューの文章の初期値） */
+export function createdText(
+  queue: readonly string[],
+  glyphs: Readonly<Record<string, { strokes: readonly unknown[] } | undefined>>,
+): string {
+  return queue.filter((c) => (glyphs[c]?.strokes.length ?? 0) > 0).join("");
+}
+
+/** 「入力ページに追加して描く」の通知。added：実際に追加した文字、requested：追加しようとした文字 */
+export function addMissingMessage(added: readonly string[], requested: readonly string[]): string {
+  const already = requested.length - added.length;
+  if (added.length === 0) return `${requested.length} 文字は、すべて入力ページの一覧にあります`;
+  return (
+    `${added.length} 文字を入力ページの一覧に追加しました` +
+    (already > 0 ? `（${already} 文字はすでに一覧にあります）` : "")
+  );
+}

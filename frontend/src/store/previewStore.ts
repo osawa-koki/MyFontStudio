@@ -16,7 +16,10 @@ interface PreviewState {
   vertical: boolean;
   ruled: boolean;
   missingMode: MissingMode;
-  set(state: Partial<Omit<PreviewState, "set">>): void;
+  /** 文章の初期値（作成済みの文字）を入れるかを決めたプロジェクト。開いてから 1 回だけ入れ、利用者が空にしたら埋め直さない */
+  textInitialized: ReadonlySet<string>;
+  set(state: Partial<Omit<PreviewState, "set" | "markTextInitialized">>): void;
+  markTextInitialized(projectId: string): void;
 }
 
 export const usePreviewStore = create<PreviewState>()((set) => ({
@@ -26,5 +29,8 @@ export const usePreviewStore = create<PreviewState>()((set) => ({
   vertical: false,
   ruled: true,
   missingMode: "highlight",
+  textInitialized: new Set(),
   set: (state) => set(state),
+  markTextInitialized: (projectId) =>
+    set((s) => ({ textInitialized: new Set(s.textInitialized).add(projectId) })),
 }));
