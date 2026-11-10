@@ -43,7 +43,10 @@ def main(ttf_path, otf_path):
     assert "glyf" in ttf and "CFF " in otf, "形式が違う"
     check("name", names(ttf), names(otf))
     for table, fields in {
-        "head": ["unitsPerEm", "fontRevision", "macStyle", "xMin", "yMin", "xMax", "yMax"],
+        "head": [
+            "unitsPerEm", "fontRevision", "macStyle", "xMin", "yMin", "xMax", "yMax", "flags",
+            "lowestRecPPEM",
+        ],
         "hhea": [
             "ascent", "descent", "lineGap", "advanceWidthMax", "minLeftSideBearing",
             "minRightSideBearing", "xMaxExtent",
@@ -80,7 +83,12 @@ def main(ttf_path, otf_path):
     ]
     for label, nt, no in pairs:
         check(f"advance {label}", ttf["hmtx"][nt][0], otf["hmtx"][no][0])
+        # 左サイドベアリング（lsb）は両形式で同じで、輪郭の xMin と 1 単位以内で合う（輪郭のないグリフは 0）
+        check(f"lsb {label}", ttf["hmtx"][nt][1], otf["hmtx"][no][1])
         bt, bo = bounds(ttf, nt), bounds(otf, no)
+        for font_label, b, lsb in (("ttf", bt, ttf["hmtx"][nt][1]), ("otf", bo, otf["hmtx"][no][1])):
+            if abs((b[0] if b else 0) - lsb) > 1:
+                errors.append(f"lsb {label}（{font_label}）: lsb={lsb} 輪郭の xMin={b[0] if b else None}")
         # .otf は三次曲線の制御点を整数に丸めるので、1 単位までの差は許す
         if (bt is None) != (bo is None) or (
             bt and any(abs(x - y) > 1 for x, y in zip(bt, bo))
