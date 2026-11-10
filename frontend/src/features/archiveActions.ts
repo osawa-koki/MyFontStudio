@@ -1,13 +1,14 @@
 import { ArchiveError, archiveFileName } from "../lib/archive/common";
 import { downloadBlob } from "../lib/download";
+import { collectOutlinesAsync } from "../lib/font/outlines";
 import { isoWithOffset } from "../lib/project/chars";
 import { sameFamilyName, sameFamilyNameMessage } from "../lib/projects/display";
 import { listStoredProjects, openAsNewProject } from "./projects";
 import { useProjectStore } from "../store/projectStore";
-import { askDialog, notify } from "../store/uiStore";
-import { commitDraft } from "./glyphActions";
+import { LOCKED_OUT_MESSAGE, isLockedOut } from "../store/tabLockStore";
+import { notify } from "../store/uiStore";
+import { confirmCommitDrafts } from "./draftPrompt";
 import { TaskCancelledError, runInWorker } from "./worker";
-import { unsavedDraftChars } from "./unsavedWarning";
 
 /** 読み込める zip の大きさの上限（圧縮後） */
 const MAX_ZIP_BYTES = 200 * 1024 * 1024;
@@ -15,8 +16,24 @@ const MAX_ZIP_BYTES = 200 * 1024 * 1024;
 /** zip の保存が動いているか（ボタンとショートカットから重ねて動かさない） */
 let savingZip = false;
 
-/** 「zip で保存」（仕様 7.4）。描きかけの文字があれば、先に保存するか確かめる。保存の途中なら何もしない */
+/** プロジェクトを開いていないときに「zip で保存」したときの案内 */
+export const NO_PROJECT_MESSAGE =
+  "保存するプロジェクトを開いていません。プロジェクトを開いてから保存してください";
+
+/**
+ * 「zip で保存」（仕様 7.4）。描きかけの文字があれば、先に保存するか確かめる。保存の途中なら何もしない。
+ * プロジェクトを開いていなければ（使い方ページを直接開いた直後・開いていたものを削除したあと）、保存せずに知らせる
+ */
 export async function saveZip(): Promise<void> {
+  if (!useProjectStore.getState().projectId) {
+    notify(NO_PROJECT_MESSAGE);
+    return;
+  }
+  // ほかのタブで編集しているときは、このタブの古い内容で書き出さない
+  if (isLockedOut()) {
+    notify(LOCKED_OUT_MESSAGE);
+    return;
+  }
   if (savingZip) {
     notify("zip に保存しています。終わるまでお待ちください");
     return;
@@ -30,30 +47,25 @@ export async function saveZip(): Promise<void> {
 }
 
 async function saveZipOnce(): Promise<void> {
-  const drafts = unsavedDraftChars();
-  if (drafts.length > 0) {
-    const { value } = await askDialog({
-      title: "この文字も保存しますか？",
-      message: `グリフとして保存していない描きかけの線があります：${drafts.join(" ")}（描いた履歴は保存しないを選んでも zip に入ります）`,
-      buttons: [
-        { label: "キャンセル", value: "cancel" },
-        { label: "保存しない", value: "skip" },
-        { label: "保存する", value: "save", variant: "primary" },
-      ],
-      cancelValue: "cancel",
-    });
-    if (value === "cancel") return;
-    if (value === "save") drafts.forEach(commitDraft);
-  }
+  if (!(await confirmCommitDrafts("描いた履歴は、保存しないを選んでも zip に入ります"))) return;
 
   // zip に入れるのは、この時点の内容。書き出し回数は保存できてから加算する
   const { project, revision } = useProjectStore.getState();
   const exportCount = project.font.exportCount + 1;
   try {
-    // 輪郭・フォント・PNG・圧縮は Web Worker で行い、進み具合を出す
+    // 輪郭はグリフごとにキャッシュしてあるものを使い（ないものだけ、画面を止めないよう区切って計算する）、
+    // フォント・PNG・圧縮は Web Worker で行って進み具合を出す
+    const outlines = (await collectOutlinesAsync(project)) ?? [];
     const now = new Date();
     const zip = await runInWorker(
-      { kind: "saveZip", project, savedAt: isoWithOffset(now), exportCount, withPreviews: true },
+      {
+        kind: "saveZip",
+        project,
+        outlines,
+        savedAt: isoWithOffset(now),
+        exportCount,
+        withPreviews: true,
+      },
       { label: "zip に保存しています" },
     );
     downloadBlob(

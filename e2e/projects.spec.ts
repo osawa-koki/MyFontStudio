@@ -332,3 +332,33 @@ test("同じフォント名のプロジェクトを作る・名前を変える�
   await settings.getByLabel(/^フォント名/).fill("Third");
   await expect(settings.getByRole("status")).toHaveCount(0);
 });
+
+test("使い方ページに移ってもロックを持ち続け、あとから開いたタブではヘッダーの操作もできない", async ({
+  page,
+  context,
+}) => {
+  await page.goto("./editor");
+  await expect(page).toHaveURL(UUID_URL);
+  const url = page.url();
+  await addAndDraw(page, "甲");
+  // 1 つ目のタブは使い方ページに移る（プロジェクトは開いたまま）
+  await page.getByRole("link", { name: "使い方" }).click();
+  await expect(page.getByRole("heading", { name: "手書きフォントを作ろう" })).toBeVisible();
+
+  const second = await context.newPage();
+  await second.goto(url);
+  await expect(
+    second.getByRole("heading", { name: "このプロジェクトはほかのタブで開いています" }),
+  ).toBeVisible();
+  // 古い内容で上書き・書き出しをしないよう、ヘッダーの操作は使えない
+  await expect(second.getByRole("button", { name: /^フォント名：/ })).toBeDisabled();
+  await expect(second.getByRole("button", { name: "zip で保存" })).toBeDisabled();
+  await expect(
+    second.getByRole("button", { name: "フォントをダウンロード（.ttf）" }),
+  ).toBeDisabled();
+
+  // 1 つ目のタブでは、使い方ページからもヘッダーで編集できる
+  await page.getByRole("button", { name: /^フォント名：/ }).click();
+  await expect(page.getByRole("dialog", { name: "フォントの設定" })).toBeVisible();
+  await second.close();
+});
