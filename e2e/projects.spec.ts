@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 import { drawStroke } from "./drawing";
-import { waitForStored } from "./storage";
+import { readStored, waitForStored, writeStored } from "./storage";
 import { expect, test } from "./fixtures";
 
 const UUID_URL = /\/editor\/\?uuid=([0-9a-f-]{36})$/;
@@ -292,4 +292,30 @@ test("同じプロジェクトを 2 つのタブで開くと、編集できる�
     }),
   ).toBeVisible();
   await second.close();
+});
+
+test("保存したデータが読めないプロジェクトは、空のプロジェクトとして開かず、上書きしない", async ({
+  page,
+}) => {
+  await page.goto("./editor");
+  await expect(page).toHaveURL(UUID_URL);
+  const url = page.url();
+  const id = uuidOf(page);
+  await addAndDraw(page, "甲");
+  const key = `myfontstudio:project:${id}`;
+  await waitForStored(page, key, (v) => !!v);
+  // 新しい版のアプリで保存した形式にする
+  const meta = (await readStored(page, key)) as Record<string, unknown>;
+  await writeStored(page, key, { ...meta, version: 99 });
+
+  await page.goto(url);
+  await expect(page.getByRole("heading", { name: "プロジェクトを開けません" })).toBeVisible();
+  await expect(page.getByText(/新しい版のアプリで保存したプロジェクトです/)).toBeVisible();
+  await expect(page.getByTestId("drawing-canvas")).toHaveCount(0);
+  expect(((await readStored(page, key)) as { version: number }).version).toBe(99);
+
+  // 元に戻せば、そのまま開ける（データは消えていない）
+  await writeStored(page, key, meta);
+  await page.getByRole("button", { name: "再読み込み" }).click();
+  await expect(page.getByLabel("登録済み文字数")).toHaveText("1 文字");
 });

@@ -13,7 +13,10 @@ import {
   loadProject,
   migrateLegacyAutosave,
   saveProject,
+  ProjectUnreadableError,
+  unreadableMessage,
   type KeyValueStore,
+  type UnreadableReason,
   type ProjectSummary,
 } from "../lib/projects/repository";
 import { requestPersistence } from "../lib/projects/storage";
@@ -179,12 +182,16 @@ function openLoaded(project: Project, id: string, dirty: boolean) {
   store.setCurrentChar(nextUncreated(project.queue, project.glyphs, null));
 }
 
-export type ProjectUrlState = "ready" | "loading" | "invalid";
+export type ProjectUrlState =
+  | { state: "ready" | "loading" | "invalid" }
+  /** 保存してあるのに読めない（空のプロジェクトとして開かない。そのキーには書き込まない） */
+  | { state: "unreadable"; reason: UnreadableReason };
 
 /**
  * URL の ?uuid= のプロジェクトを開く（入力ページ・プレビューで使う。Suspense の中で使う）
  * - uuid がない：開いているプロジェクトがあればその uuid、なければ新しいプロジェクトを作って URL に付ける
  * - 保存してあれば読み込む。保存していない（文字を追加する前にリロードしたなど）なら、その uuid で新しく始める
+ * - 保存してあるのに読めなければ unreadable（理由付き。空のプロジェクトとして始めると、元のデータを上書きするため）
  * - uuid の形が正しくなければ invalid
  */
 export function useProjectFromUrl(): ProjectUrlState {
@@ -192,7 +199,7 @@ export function useProjectFromUrl(): ProjectUrlState {
   const projectId = useProjectStore((s) => s.projectId);
   const router = useRouter();
   const pathname = usePathname();
-  const [failed, setFailed] = useState<string | null>(null);
+  const [failed, setFailed] = useState<{ uuid: string; reason: UnreadableReason } | null>(null);
 
   useEffect(() => {
     if (!uuid) {
@@ -220,22 +227,33 @@ export function useProjectFromUrl(): ProjectUrlState {
           );
         }
       })
-      .catch(() => {
-        if (!cancelled) setFailed(uuid);
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        console.warn("プロジェクトを読み込めませんでした", e);
+        setFailed({ uuid, reason: e instanceof ProjectUnreadableError ? e.reason : "error" });
       });
     return () => {
       cancelled = true;
     };
   }, [uuid, pathname, router]);
 
-  if (uuid && (!isProjectId(uuid) || failed === uuid)) return "invalid";
-  return uuid && uuid === projectId ? "ready" : "loading";
+  if (uuid && !isProjectId(uuid)) return { state: "invalid" };
+  if (uuid && failed?.uuid === uuid) return { state: "unreadable", reason: failed.reason };
+  return { state: uuid && uuid === projectId ? "ready" : "loading" };
 }
 
 /** 保存されている最新の内容でプロジェクトを開き直す（ほかのタブから編集を引き継いだとき） */
 export async function reloadProject(id: string): Promise<void> {
   await flushProjectSave();
-  const loaded = await loadProject(idb, id);
+  let loaded;
+  try {
+    loaded = await loadProject(idb, id);
+  } catch (e) {
+    // 読めなければ、今開いている内容のまま（読めない内容で上書きしない）
+    const reason = e instanceof ProjectUnreadableError ? e.reason : "error";
+    notify(`保存されている最新の内容を読み込めませんでした。${unreadableMessage(reason)}`, "error");
+    return;
+  }
   if (!loaded) return;
   stored.add(id);
   lastSaved.set(id, loaded.project);

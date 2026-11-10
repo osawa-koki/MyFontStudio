@@ -3,13 +3,15 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useProjectFromUrl } from "../features/projects";
+import { unreadableMessage } from "../lib/projects/repository";
 import { takeOverProject, useProjectLock } from "../features/tabLock";
 import { useProjectStore } from "../store/projectStore";
 import { useTabLockStore } from "../store/tabLockStore";
 
 /** URL の ?uuid= のプロジェクトを開いてから中身を表示する */
 export function ProjectGate({ children }: { children: ReactNode }) {
-  const state = useProjectFromUrl();
+  const url = useProjectFromUrl();
+  const state = url.state;
   const projectId = useProjectStore((s) => s.projectId);
   const lock = useTabLockStore((s) => s.status);
   useProjectLock(state === "ready" ? projectId : null);
@@ -21,6 +23,29 @@ export function ProjectGate({ children }: { children: ReactNode }) {
         <Link href="/" className="btn btn-primary">
           プロジェクトの一覧へ
         </Link>
+      </section>
+    );
+  }
+  if (url.state === "unreadable") {
+    return (
+      <section className="flex flex-col items-center gap-4 py-16 text-center" role="alert">
+        <h1 className="text-xl font-bold">プロジェクトを開けません</h1>
+        <p className="max-w-xl">{unreadableMessage(url.reason)}</p>
+        <p className="max-w-xl text-sm text-slate-600">
+          保存してあるデータを上書きしないよう、このプロジェクトは開かずにおきます。
+        </p>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => window.location.reload()}
+          >
+            再読み込み
+          </button>
+          <Link href="/" className="btn">
+            プロジェクトの一覧へ
+          </Link>
+        </div>
       </section>
     );
   }
