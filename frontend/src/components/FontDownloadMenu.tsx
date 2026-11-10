@@ -1,6 +1,7 @@
 import { downloadFont } from "../features/actions";
 import { countGlyphs } from "../lib/project/project";
 import { useProjectStore } from "../store/projectStore";
+import { LOCKED_OUT_MESSAGE, useLockedOut } from "../store/tabLockStore";
 import { useMenuButton } from "./useMenuButton";
 
 const ITEM =
@@ -12,7 +13,8 @@ export function FontDownloadMenu() {
   const glyphCount = useProjectStore((s) => countGlyphs(s.project));
   const { open, toggle, close, rootRef, buttonRef, menuRef, onButtonKeyDown, onMenuKeyDown } =
     useMenuButton();
-  const disabled = glyphCount === 0;
+  const lockedOut = useLockedOut();
+  const disabled = glyphCount === 0 || lockedOut;
   const pick = (format: "ttf" | "otf") => {
     close();
     void downloadFont(format);
@@ -23,7 +25,13 @@ export function FontDownloadMenu() {
         type="button"
         className="btn btn-primary rounded-r-none"
         disabled={disabled}
-        title={disabled ? "まだ文字がありません" : "Word で使うなら .ttf"}
+        title={
+          lockedOut
+            ? LOCKED_OUT_MESSAGE
+            : glyphCount === 0
+              ? "まだ文字がありません"
+              : "Word で使うなら .ttf"
+        }
         onClick={() => void downloadFont("ttf")}
       >
         フォントをダウンロード（.ttf）
