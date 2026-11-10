@@ -17,15 +17,16 @@ import {
   type ProjectSummary,
 } from "../lib/projects/repository";
 import { requestPersistence } from "../lib/projects/storage";
-import { saveTiming } from "../lib/projects/saving";
+import { isQuotaError, saveFailedMessage, saveTiming } from "../lib/projects/saving";
 import { useEditorStore } from "../store/editorStore";
+import { useSaveStatusStore } from "../store/saveStatusStore";
 import { canEditInThisTab } from "../store/tabLockStore";
 import { withStorageLock } from "./tabLock";
 import { useProjectStore } from "../store/projectStore";
 import { notify } from "../store/uiStore";
 import type { Project } from "../types/project";
 
-/** IndexedDB（idb-keyval）。プライベートブラウズなどで使えないときは保存に失敗する（警告だけ出す） */
+/** IndexedDB（idb-keyval）。プライベートブラウズ・容量の不足などで保存に失敗したら、通知してヘッダーに出す（saveStatusStore） */
 const idb: KeyValueStore = { get, getMany, set, setMany, del, delMany };
 
 /** 保存したことのあるプロジェクトの ID（中身が空になっても保存し続ける） */
@@ -50,9 +51,28 @@ function enqueue(op: () => Promise<void>, track = true): Promise<void> {
   return writes;
 }
 
-/** IndexedDB への書き込みが終わっていない（または 500ms 待っている）保存があるか */
+/**
+ * IndexedDB への書き込みが終わっていない（または 500ms 待っている）保存があるか。
+ * 保存に失敗したままのとき（保存できていない変更があるとき）も true
+ */
 export function hasPendingSave(): boolean {
-  return pendingWrites > 0 || saveLater.pending();
+  return pendingWrites > 0 || saveLater.pending() || useSaveStatusStore.getState().failed;
+}
+
+/** 保存に失敗した。続けて失敗しているあいだは通知を重ねない（容量の不足に変わったときだけ、改めて知らせる） */
+function onSaveFailed(e: unknown): void {
+  const quota = isQuotaError(e);
+  const status = useSaveStatusStore.getState();
+  if (!status.failed || (quota && !status.quota)) notify(saveFailedMessage(quota), "error");
+  status.set({ failed: true, quota });
+}
+
+/** 保存に成功した。失敗していたなら、状態を戻して知らせる */
+function onSaveSucceeded(): void {
+  const status = useSaveStatusStore.getState();
+  if (!status.failed) return;
+  status.set({ failed: false, quota: false });
+  notify("ブラウザに保存できるようになりました", "success");
 }
 
 /** ブラウザに永続化を頼んだか（1 回の表示で 1 回だけ頼む） */
@@ -71,8 +91,14 @@ function save(id: string, project: Project, dirty: boolean): Promise<void> {
   stored.add(id);
   askPersistenceOnce();
   return enqueue(async () => {
-    await saveProject(idb, id, project, dirty, new Date(), lastSaved.get(id));
+    try {
+      await saveProject(idb, id, project, dirty, new Date(), lastSaved.get(id));
+    } catch (e) {
+      onSaveFailed(e);
+      throw e;
+    }
     lastSaved.set(id, project);
+    onSaveSucceeded();
   });
 }
 
