@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { drawStroke } from "./drawing";
 
 test("/healthz は ok を返す", async ({ request }) => {
   const res = await request.get("/healthz");
@@ -59,4 +60,26 @@ test("ビルド成果物は長くキャッシュし、ないファイルは 404"
   expect(res.headers()["cache-control"]).toContain("immutable");
   expect(res.headers()["content-security-policy"]).toContain("default-src 'self'");
   expect((await request.get("/_next/static/nothing.js")).status()).toBe(404);
+});
+
+test("Web Worker のファイル名には中身のハッシュが付き、長くキャッシュする", async ({
+  page,
+  request,
+}) => {
+  // 文字を保存すると、プレビュー用のフォントを Worker で作る
+  const loaded = page.waitForResponse((r) => r.url().includes("/workers/"));
+  await page.goto("/editor");
+  await page.getByLabel("追加する文字列").fill("口");
+  await page.getByRole("button", { name: "追加", exact: true }).click();
+  await drawStroke(page, [
+    [200, 200],
+    [800, 800],
+  ]);
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  const res = await loaded;
+  expect(res.url()).toMatch(/\/workers\/font\.worker-[A-Za-z0-9]+\.js$/);
+  expect(res.status()).toBe(200);
+  expect(res.headers()["cache-control"]).toBe("public, max-age=31536000, immutable");
+  // 固定の名前のファイルはない
+  expect((await request.get("/workers/font.worker.js")).status()).toBe(404);
 });

@@ -55,6 +55,17 @@ describe("saveZip", () => {
     expect(s().dirty).toBe(true);
   });
 
+  it("プロジェクトを開いていなければ保存せずに知らせる", async () => {
+    s().closeProject();
+    useUiStore.setState({ toasts: [] });
+    await saveZip();
+    expect(mocks.pending).toHaveLength(0);
+    expect(mocks.downloads).toHaveLength(0);
+    expect(useUiStore.getState().toasts.map((t) => t.message)).toEqual([
+      expect.stringMatching(/プロジェクトを開いていません/),
+    ]);
+  });
+
   it("途中で変更がなければ保存済みになる", async () => {
     const done = saveZip();
     await flush();
