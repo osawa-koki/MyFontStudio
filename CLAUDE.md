@@ -123,7 +123,7 @@ PAGES=1 BASE_URL=http://localhost:8099/MyFontStudio/ npx playwright test --proje
 - **.ttf と .otf は同じ中間データから作る**：`GlyphOutline` と `FontSpec` を受け取り ArrayBuffer を返す。形式ごとの違いはアダプタ（`lib/font/ttf.ts`・`lib/font/otf.ts`）に閉じ込める。名前・メトリクス・OS/2 の値は、ライブラリで書き出したあとに `lib/font/sfnt.ts` でテーブルを差し替えて、両形式でそろえる（仕様 6.4）。
 - **座標**：Canvas とストロークは 0〜1000 の em 座標（y 下向き）。フォント座標は `fontX = x`、`fontY = 880 - y`（y 上向き、ベースライン 0）。
 - **編集できるタブは 1 つ**：`features/tabLock.ts`（Web Locks API のプロジェクトごとのロック、BroadcastChannel での引き継ぎ）。ロックを持っていないタブ（`store/tabLockStore.ts` の `canEditInThisTab()` が false）では保存しない。IndexedDB への書き込みはタブをまたいで `withStorageLock` で順番に行う。
-- **プロジェクトの切り替え**：ヘッダーの `ProjectSwitcher`（一覧・新しいプロジェクト・ZIP の読み込み）と使い方ページの `GuideActions` は、`features/projectActions.ts`（`createProjectInteractive`・`confirmLeaveDrafts`）を共通に使う。描きかけのストロークがあれば切り替える前に確かめる。
+- **プロジェクトの切り替え**：ヘッダーの `ProjectSwitcher`（一覧・新しいプロジェクト・ZIP の読み込み）と使い方ページの `GuideActions` は、`features/projectActions.ts` の `createProjectInteractive`（フォント名を聞いて新しいプロジェクトを作る）を共通に使う。描きかけのストロークは描いた履歴としてプロジェクトに保存されるので、切り替える前には確かめない（切り替えたあとも、その文字の続きを描ける）。
 - **プロジェクトは UUID で管理する**：開いているプロジェクトの ID はストアの `projectId`。入力・プレビューへのリンクと移動には `projectHref()` で `?uuid=` を付ける。zip を開くと新しい UUID のプロジェクトになる（開いているものを上書きしない）。
 - **描いた履歴もプロジェクトのデータ**：`project.drawings`（文字ごと）はブラウザにも zip（`rawdata/history/`）にも入る。描いた線はすぐに保存する。
 - **zip のデータ形式**（`project.json`・ベクター JSON）を変えるときは `formatVersion` を上げ、古い形式のマイグレーションを書く。
