@@ -1,6 +1,6 @@
 // 重い処理（フォントの生成・zip の保存と読み込み）を動かす Web Worker
 import { ArchiveError } from "../lib/archive/archive";
-import { renderGlyphPng } from "../lib/glyph/png";
+import { renderOutlinePng } from "../lib/glyph/png";
 import { runTask, type Progress, type Task } from "./tasks";
 
 export type WorkerRequest = { id: number; task: Task };
@@ -19,7 +19,7 @@ ctx.onmessage = async (e) => {
   try {
     const result = await runTask(task, {
       onProgress: (progress) => ctx.postMessage({ id, type: "progress", progress }),
-      renderPng: typeof OffscreenCanvas !== "undefined" ? renderGlyphPng : undefined,
+      renderPng: typeof OffscreenCanvas !== "undefined" ? renderOutlinePng : undefined,
     });
     // 大きなバイナリは複製せずに渡す
     const transfer =
