@@ -4,6 +4,8 @@ import type { ReactNode } from "react";
 import { useProjectPersistence } from "../features/projects";
 import { useFontPreview } from "../features/fontPreview";
 import { useSaveShortcut } from "../features/saveShortcut";
+import { useProjectLock } from "../features/tabLock";
+import { useProjectStore } from "../store/projectStore";
 import { useUnsavedWarning } from "../features/unsavedWarning";
 import { useZipDrop } from "../features/zipDrop";
 import { DialogHost } from "./DialogHost";
@@ -13,6 +15,8 @@ import { Toasts } from "./Toasts";
 
 /** すべてのページの共通の外枠（ヘッダー・通知・ダイアログ）。プレビュー用のフォントの生成と zip のドロップもここで扱う */
 export function AppShell({ children }: { children: ReactNode }) {
+  // 開いているプロジェクトのロック（ページを移っても、使い方ページにいても持ち続ける）
+  useProjectLock(useProjectStore((s) => s.projectId));
   useFontPreview();
   useProjectPersistence();
   useUnsavedWarning();
