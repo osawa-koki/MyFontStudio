@@ -33,7 +33,8 @@ export function FontSettingsButton() {
         className="rounded-md px-2 py-1 text-slate-600 hover:bg-slate-100 disabled:opacity-50"
         title={lockedOut ? LOCKED_OUT_MESSAGE : "フォント名・日本語名・作者を編集"}
         disabled={lockedOut}
-        aria-label={`フォント名：${font.familyName}（クリックで編集）`}
+        // 読み上げの名前に、見えている文字（編集）をそのまま含める（括弧の中の文字は数えられない）
+        aria-label={`フォント名：${font.familyName}を編集`}
         onClick={open}
       >
         編集

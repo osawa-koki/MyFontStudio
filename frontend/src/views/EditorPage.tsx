@@ -12,6 +12,7 @@ import { PRESETS, isCreated, nextUncreated, parseInputChars, prevChar } from "..
 import { toCodepointLabel } from "../lib/project/project";
 import { projectHref } from "../lib/projects/repository";
 import { canRedo, canUndo, isDirty, strokesOf } from "../lib/stroke/history";
+import { hasStrokeOutsideFrame } from "../lib/stroke/record";
 import { useEditorStore, useHistory, usePen } from "../store/editorStore";
 import { useProjectStore } from "../store/projectStore";
 import { askDialog, confirmDialog, notify } from "../store/uiStore";
@@ -194,7 +195,7 @@ export function EditorPage() {
           >
             <label className="text-sm text-slate-600" htmlFor="chars-input">
               追加する文字列
-              <span className="ml-2 text-xs text-slate-400">
+              <span className="ml-2 text-xs text-slate-500">
                 複数行でも入力できます（改行・空白は除きます）。Ctrl/⌘+Enter でも追加
               </span>
             </label>
@@ -277,6 +278,11 @@ export function EditorPage() {
               }
             }}
           />
+          {hasStrokeOutsideFrame(strokes) && (
+            <p className="text-xs text-amber-800" role="status" data-testid="outside-frame">
+              枠の外にはみ出した線があります。枠の外は表示されませんが、フォントには入ります（いらなければ元に戻してください）
+            </p>
+          )}
           <div className="flex flex-wrap justify-center gap-2">
             <button
               type="button"

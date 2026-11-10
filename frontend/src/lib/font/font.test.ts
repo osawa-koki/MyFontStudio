@@ -4,11 +4,13 @@ import { glyphToOutline } from "../glyph/outline";
 import type { Contour } from "../glyph/types";
 import { createEmptyProject } from "../project/project";
 import { JUU, KUCHI, LATIN_A, MARU, dot, makeGlyph } from "../testing/fixtures";
-import { buildFont, collectOutlines } from "./build";
+import { assertFontRange, buildFont, collectOutlines } from "./build";
 import { buildFontGlyphs, glyphName, notdefContours, NOTDEF_BOX } from "./glyphs";
 import { contoursToPath } from "./otf";
 import {
   CODE_PAGE_RANGE1,
+  HEAD_FLAGS,
+  LOWEST_REC_PPEM,
   buildName,
   buildOS2,
   buildSfnt,
@@ -19,6 +21,7 @@ import {
 import { createFontSpec, versionFromExportCount } from "./spec";
 import { hheaExtents } from "./ttf";
 import { signedArea } from "../glyph/geometry";
+import { contoursBounds } from "../glyph/width";
 
 // テストは Node で動くので、UMD の default を使う
 const opentype = ("parse" in opentypeNs
@@ -237,6 +240,23 @@ describe("buildFont（.ttf と .otf）", () => {
     }
   });
 
+  it("両形式で hmtx の lsb は各グリフの輪郭の xMin、head の flags・lowestRecPPEM も同じ", () => {
+    const glyphs = buildFontGlyphs(OUTLINES);
+    const expected = glyphs.map((g) => contoursBounds(g.contours)?.xMin ?? 0);
+    for (const buffer of [ttf, otf]) {
+      const t = parseSfnt(buffer).tables;
+      const hhea = new DataView(t.get("hhea")!.buffer);
+      const hmtx = new DataView(t.get("hmtx")!.buffer);
+      const n = hhea.getUint16(34);
+      const lsb = glyphs.map((_, i) => hmtx.getInt16(i < n ? i * 4 + 2 : n * 4 + (i - n) * 2));
+      expect(lsb).toEqual(expected);
+      const head = new DataView(t.get("head")!.buffer);
+      expect(head.getUint16(16)).toBe(HEAD_FLAGS);
+      expect(head.getUint16(46)).toBe(LOWEST_REC_PPEM);
+    }
+    expect(expected[0]).toBe(NOTDEF_BOX.x0);
+  });
+
   it(".ttf の輪郭は中間データの点そのまま", () => {
     const ft = opentype.parse(ttf);
     const g = ft.charToGlyph("口") as unknown as {
@@ -270,6 +290,19 @@ describe("buildFont（.ttf と .otf）", () => {
 
   it("輪郭のあるグリフがなければ作らない", () => {
     expect(buildFont("ttf", [], FONT)).toBeNull();
+  });
+
+  it("座標・送り幅がフォントで扱える範囲を超えたら、どの文字かが分かるエラーにする", () => {
+    const glyphs = buildFontGlyphs(OUTLINES);
+    expect(() => assertFontRange(glyphs)).not.toThrow();
+    const point = (x: number, y: number) => [[{ x, y, onCurve: true }]];
+    const at = (contours: Contour[], advanceWidth = 1000) => [
+      { name: "uni53E3", unicode: 0x53e3, advanceWidth, contours },
+    ];
+    expect(() => assertFontRange(at(point(40000, 0)))).toThrow(/「口」の座標/);
+    expect(() => assertFontRange(at(point(0, -40000)))).toThrow(/「口」の座標/);
+    expect(() => assertFontRange(at([], 70000))).toThrow(/「口」の送り幅/);
+    expect(() => assertFontRange(at(point(32767, -32768)))).not.toThrow();
   });
 
   it("hheaExtents は輪郭のあるグリフだけで計算する", () => {

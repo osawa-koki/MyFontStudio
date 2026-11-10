@@ -359,6 +359,29 @@ export function fontExtents(glyphs: readonly FontGlyph[]) {
   };
 }
 
+/** head.flags：ベースラインは y=0（bit 0）、lsb は x=0（bit 1）、ppem を整数にする（bit 3） */
+export const HEAD_FLAGS = 0x000b;
+/** head.lowestRecPPEM：読める最小のピクセルの大きさ */
+export const LOWEST_REC_PPEM = 8;
+
+/**
+ * hmtx の lsb を、各グリフの輪郭の xMin（輪郭のないグリフは 0）に書き換える。
+ * hmtx は、先頭の numberOfHMetrics 個が（送り幅, lsb）の組、残りのグリフは lsb だけが並ぶ
+ */
+export function setLeftSideBearings(
+  hmtx: Uint8Array,
+  numberOfHMetrics: number,
+  glyphs: readonly FontGlyph[],
+): void {
+  const v = new DataView(hmtx.buffer, hmtx.byteOffset, hmtx.byteLength);
+  glyphs.forEach((g, i) => {
+    const offset =
+      i < numberOfHMetrics ? i * 4 + 2 : numberOfHMetrics * 4 + (i - numberOfHMetrics) * 2;
+    if (offset + 2 > hmtx.byteLength) throw new Error("hmtx テーブルが短い");
+    v.setInt16(offset, contoursBounds(g.contours)?.xMin ?? 0);
+  });
+}
+
 /**
  * ライブラリで書き出したフォントを仕上げる：name・OS/2 を差し替え、head・hhea・maxp・post の値を書き換える
  */
@@ -407,6 +430,15 @@ export function finalizeFont(
     const mv = new DataView(maxp.buffer);
     if (mv.getUint16(14) < 1) mv.setUint16(14, 2);
   }
+
+  // head の flags・lowestRecPPEM は両形式でそろえる（.ttf の値。opentype.js は 0x03・3 を書く）
+  hv.setUint16(16, HEAD_FLAGS);
+  hv.setUint16(46, LOWEST_REC_PPEM);
+
+  // hmtx の左サイドベアリング（lsb）は、各グリフの輪郭の xMin（輪郭のないグリフは 0）にする。
+  // OpenType の仕様では CFF のフォントでも xMin と同じにするが、opentype.js はすべて 0 を書く
+  const hmtx = t.get("hmtx");
+  if (hmtx) setLeftSideBearings(hmtx, hh.getUint16(34), glyphs);
 
   const post = t.get("post");
   if (post && post.length >= 32) {
