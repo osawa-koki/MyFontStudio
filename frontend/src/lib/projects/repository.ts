@@ -163,36 +163,86 @@ export async function listProjects(kv: KeyValueStore): Promise<ProjectSummary[]>
 /** 文字の一覧のうち、キーに使える 1 文字のものだけ */
 const singleChars = (chars: readonly string[]) => chars.filter((c) => Array.from(c).length === 1);
 
+/**
+ * 保存してあるプロジェクトを読めないときの理由
+ * - error：保存先を読めなかった（IndexedDB の一時的なエラーなど）
+ * - invalid：データの形が正しくない（一部が壊れている・一覧にあるのにデータがない）
+ * - newer：新しい版のアプリで保存した形式（デプロイの前に開いた画面など）
+ */
+export type UnreadableReason = "error" | "invalid" | "newer";
+
+/** 保存してあるのに読めない（空のプロジェクトとして開いて、元のデータを上書きしないよう、「ない」と区別する） */
+export class ProjectUnreadableError extends Error {
+  constructor(readonly reason: UnreadableReason) {
+    super(unreadableMessage(reason));
+  }
+}
+
+/** 読めないときに利用者に出す文言 */
+export function unreadableMessage(reason: UnreadableReason): string {
+  switch (reason) {
+    case "newer":
+      return "新しい版のアプリで保存したプロジェクトです。ページを再読み込みしてから開いてください。";
+    case "invalid":
+      return "このブラウザに保存したデータの一部が壊れていて、開けません。zip で保存したファイルがあれば、そこから開いてください。";
+    default:
+      return "このブラウザの保存先を読めませんでした。ページを再読み込みしてください。直らないときは、zip で保存したファイルから開いてください。";
+  }
+}
+
+/**
+ * 保存してあるプロジェクトを読む。保存していない（キーがない）なら null。
+ * 保存してあるのに読めないとき（読み込みのエラー・形が正しくない・新しい形式・一覧にあるのにデータがない）は
+ * ProjectUnreadableError（呼び出し側は空のプロジェクトとして開かず、そのキーに書き込まない）
+ */
 export async function loadProject(kv: KeyValueStore, id: string): Promise<StoredProject | null> {
   if (!isProjectId(id)) return null;
+  let raw: unknown;
   try {
-    const raw = await kv.get(projectKey(id));
-    const meta = metaSchema.safeParse(raw);
-    if (meta.success) {
-      const glyphChars = singleChars(meta.data.glyphChars);
-      const drawingChars = singleChars(meta.data.drawingChars);
-      const values = await kv.getMany([
+    raw = await kv.get(projectKey(id));
+  } catch {
+    throw new ProjectUnreadableError("error");
+  }
+  if (raw === undefined) {
+    // 一覧にあるのにデータがないなら、「保存していない」ではない
+    if ((await listProjects(kv)).some((s) => s.id === id))
+      throw new ProjectUnreadableError("invalid");
+    return null;
+  }
+  const version = (raw as { version?: unknown } | null)?.version;
+  if (typeof version === "number" && version > STORED_VERSION) {
+    throw new ProjectUnreadableError("newer");
+  }
+  const meta = metaSchema.safeParse(raw);
+  if (meta.success) {
+    const glyphChars = singleChars(meta.data.glyphChars);
+    const drawingChars = singleChars(meta.data.drawingChars);
+    let values: unknown[];
+    try {
+      values = await kv.getMany([
         ...glyphChars.map((c) => glyphKey(id, c)),
         ...drawingChars.map((c) => drawingKey(id, c)),
       ]);
-      const glyphs: Record<string, unknown> = {};
-      const drawings: Record<string, unknown> = {};
-      glyphChars.forEach((c, i) => (glyphs[c] = values[i]));
-      drawingChars.forEach((c, i) => (drawings[c] = values[glyphChars.length + i]));
-      return {
-        project: sanitizeProject({ ...meta.data.project, glyphs, drawings }),
-        dirty: meta.data.dirty,
-      };
+    } catch {
+      throw new ProjectUnreadableError("error");
     }
-    // 形式 1：読んだら形式 2 に書き直す
-    const v1 = storedV1Schema.safeParse(raw);
-    if (!v1.success) return null;
-    const loaded = { project: sanitizeProject(v1.data.project), dirty: v1.data.dirty };
-    await saveProject(kv, id, loaded.project, loaded.dirty, new Date(v1.data.savedAt));
-    return loaded;
-  } catch {
-    return null;
+    const glyphs: Record<string, unknown> = {};
+    const drawings: Record<string, unknown> = {};
+    glyphChars.forEach((c, i) => (glyphs[c] = values[i]));
+    drawingChars.forEach((c, i) => (drawings[c] = values[glyphChars.length + i]));
+    return {
+      project: sanitizeProject({ ...meta.data.project, glyphs, drawings }),
+      dirty: meta.data.dirty,
+    };
   }
+  // 形式 1：読んだら形式 2 に書き直す（書き直せなくても、読めたものは開く。次の保存で書く）
+  const v1 = storedV1Schema.safeParse(raw);
+  if (!v1.success) throw new ProjectUnreadableError("invalid");
+  const loaded = { project: sanitizeProject(v1.data.project), dirty: v1.data.dirty };
+  await saveProject(kv, id, loaded.project, loaded.dirty, new Date(v1.data.savedAt)).catch(
+    () => {},
+  );
+  return loaded;
 }
 
 /**

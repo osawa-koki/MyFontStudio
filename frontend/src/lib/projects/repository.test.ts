@@ -5,6 +5,7 @@ import { KUCHI, dot } from "../testing/fixtures";
 import {
   INDEX_KEY,
   LEGACY_AUTOSAVE_KEY,
+  ProjectUnreadableError,
   cleanupOrphanKeys,
   createProjectId,
   debounce,
@@ -90,18 +91,41 @@ describe("saveProject / loadProject / listProjects / deleteProject", () => {
     expect(await loadProject(kv, "x")).toBeNull();
   });
 
-  it("ない・形が違う・読めないときは null や空", async () => {
+  it("保存していなければ null。一覧が壊れていれば空", async () => {
     const kv = memoryStore();
     expect(await loadProject(kv, ID_A)).toBeNull();
     expect(await listProjects(kv)).toEqual([]);
-    kv.data.set(projectKey(ID_A), { version: 99 });
     kv.data.set(INDEX_KEY, [{ id: "bad" }, "x"]);
-    expect(await loadProject(kv, ID_A)).toBeNull();
     expect(await listProjects(kv)).toEqual([]);
     kv.data.set(INDEX_KEY, "x");
     expect(await listProjects(kv)).toEqual([]);
+  });
+
+  it("保存してあるのに読めないときは、理由付きの ProjectUnreadableError（「ない」と区別する）", async () => {
+    const reason = async (kv: KeyValueStore) =>
+      loadProject(kv, ID_A).then(
+        () => "loaded",
+        (e: unknown) => (e instanceof ProjectUnreadableError ? e.reason : "other"),
+      );
+    // 新しい版の形式
+    const kv = memoryStore();
+    kv.data.set(projectKey(ID_A), { version: 99 });
+    expect(await reason(kv)).toBe("newer");
+    // 形が正しくない
+    kv.data.set(projectKey(ID_A), { version: 2, project: {} });
+    expect(await reason(kv)).toBe("invalid");
+    // 一覧にあるのにデータがない
+    await saveProject(kv, ID_A, sample(), false);
+    kv.data.delete(projectKey(ID_A));
+    expect(await reason(kv)).toBe("invalid");
+    // 読み込みのエラー
     const broken: KeyValueStore = { ...kv, get: () => Promise.reject(new Error("blocked")) };
-    expect(await loadProject(broken, ID_A)).toBeNull();
+    expect(await reason(broken)).toBe("error");
+    const brokenMany = memoryStore();
+    await saveProject(brokenMany, ID_A, sample(), false);
+    expect(await reason({ ...brokenMany, getMany: () => Promise.reject(new Error("lost")) })).toBe(
+      "error",
+    );
     expect(await listProjects(broken)).toEqual([]);
     expect(await migrateLegacyAutosave(broken)).toBeNull();
   });
@@ -118,6 +142,31 @@ describe("saveProject / loadProject / listProjects / deleteProject", () => {
     expect(Object.keys(r!.project.glyphs)).toEqual(["口"]);
     expect(r!.project.queue).toEqual(["口"]);
     expect(r!.project.font.familyName).toBe("MyHandwriting");
+  });
+});
+
+describe("範囲外の座標（前の版で Canvas の外まで描いたもの）", () => {
+  it("ブラウザから読み込むときも捨てずに範囲（-1000〜2000）に収める", async () => {
+    const kv = memoryStore();
+    const far = {
+      points: [
+        [-5000, 100, 0.5],
+        [500, 3000, 0.5],
+      ] as [number, number, number][],
+    };
+    const p = {
+      ...sample(),
+      glyphs: { 口: { ...KUCHI, strokes: [far] } },
+      drawings: { 口: createHistory([far]) },
+    };
+    await saveProject(kv, ID_A, p, false);
+    const loaded = (await loadProject(kv, ID_A))!.project;
+    expect(loaded.glyphs["口"]!.strokes[0]!.points).toEqual([
+      [-1000, 100, 0.5],
+      [500, 2000, 0.5],
+    ]);
+    const op = loaded.drawings["口"]!.ops[0]!;
+    expect(op.type === "add" && op.stroke.points[0]).toEqual([-1000, 100, 0.5]);
   });
 });
 

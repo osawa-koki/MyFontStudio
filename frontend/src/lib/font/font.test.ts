@@ -4,7 +4,7 @@ import { glyphToOutline } from "../glyph/outline";
 import type { Contour } from "../glyph/types";
 import { createEmptyProject } from "../project/project";
 import { JUU, KUCHI, LATIN_A, MARU, dot, makeGlyph } from "../testing/fixtures";
-import { buildFont, collectOutlines } from "./build";
+import { assertFontRange, buildFont, collectOutlines } from "./build";
 import { buildFontGlyphs, glyphName, notdefContours, NOTDEF_BOX } from "./glyphs";
 import { contoursToPath } from "./otf";
 import {
@@ -270,6 +270,19 @@ describe("buildFont（.ttf と .otf）", () => {
 
   it("輪郭のあるグリフがなければ作らない", () => {
     expect(buildFont("ttf", [], FONT)).toBeNull();
+  });
+
+  it("座標・送り幅がフォントで扱える範囲を超えたら、どの文字かが分かるエラーにする", () => {
+    const glyphs = buildFontGlyphs(OUTLINES);
+    expect(() => assertFontRange(glyphs)).not.toThrow();
+    const point = (x: number, y: number) => [[{ x, y, onCurve: true }]];
+    const at = (contours: Contour[], advanceWidth = 1000) => [
+      { name: "uni53E3", unicode: 0x53e3, advanceWidth, contours },
+    ];
+    expect(() => assertFontRange(at(point(40000, 0)))).toThrow(/「口」の座標/);
+    expect(() => assertFontRange(at(point(0, -40000)))).toThrow(/「口」の座標/);
+    expect(() => assertFontRange(at([], 70000))).toThrow(/「口」の送り幅/);
+    expect(() => assertFontRange(at(point(32767, -32768)))).not.toThrow();
   });
 
   it("hheaExtents は輪郭のあるグリフだけで計算する", () => {
