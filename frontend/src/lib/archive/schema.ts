@@ -22,8 +22,11 @@ export const penParamsSchema = z.object({
   streamline: finite.min(0).max(1),
 });
 
-/** 点の座標。範囲外の点はフォントの座標（16 ビット）に収まらないことがあるので、読み込まない */
-const coord = finite.min(STROKE_COORD_MIN).max(STROKE_COORD_MAX);
+/**
+ * 点の座標。範囲外の点はフォントの座標（16 ビット）に収まらないことがあるので、範囲（STROKE_COORD_MIN〜MAX）に収めて読み込む。
+ * 捨てると、前の版で Canvas の外まで描いたグリフ・描いた履歴が、zip・ブラウザからの読み込みで消えてしまうため
+ */
+const coord = finite.transform((v) => Math.min(STROKE_COORD_MAX, Math.max(STROKE_COORD_MIN, v)));
 
 const strokeSchema = z.object({
   points: z.array(z.tuple([coord, coord, finite.min(0).max(1)])).max(100_000),

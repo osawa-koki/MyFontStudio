@@ -207,7 +207,7 @@ describe("readArchive のエラー", () => {
     // 一覧から正しくない文字（2 文字・改行・絵文字）は除く
     expect(project.queue).toEqual(["口", "十", "A", "B", "C", "D"]);
   });
-  it("座標が範囲（-1000〜2000）の外の点を含むベクター・履歴は、その文字だけ飛ばす", async () => {
+  it("座標が範囲（-1000〜2000）の外の点は、捨てずに範囲に収めて読み込む（ベクター・履歴とも）", async () => {
     const far = {
       points: [
         [100, 100, 0.5],
@@ -233,9 +233,14 @@ describe("readArchive のエラー", () => {
       }),
     });
     const { project, skipped } = await readArchive(buf);
-    expect(Object.keys(project.glyphs)).toEqual(["口"]);
-    expect(project.drawings).toEqual({});
-    expect(skipped.map((s) => s.char)).toEqual(["A", "口"]);
+    expect(skipped).toEqual([]);
+    expect(Object.keys(project.glyphs).sort()).toEqual(["A", "口"].sort());
+    expect(project.glyphs["A"]!.strokes[0]!.points).toEqual([
+      [100, 100, 0.5],
+      [2000, 100, 0.5],
+    ]);
+    const op = project.drawings["口"]!.ops[0]!;
+    expect(op.type === "add" && op.stroke.points[1]).toEqual([2000, 100, 0.5]);
   });
   it("フォント名が使えない文字だけなら初期値にする", async () => {
     const json = JSON.parse(projectJson());
