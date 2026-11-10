@@ -286,10 +286,12 @@ test("枠の外までドラッグした線は、枠の外にはみ出したこ�
     [700, 500],
   ]);
   await expect(page.getByTestId("outside-frame")).toHaveCount(0);
-  // Canvas の下の外まで動かす（描き始めにポインターをキャプチャするので、外でも記録が続く）
+  // Canvas の下の外まで動かす（描き始めにポインターをキャプチャするので、外でも記録が続く）。
+  // 記録する範囲の端（太さ 40 なら y=1050）より外で、画面（ビューポート）の中に収まる位置にする
+  // （Firefox は画面の外へのマウスの移動を伝えないため）
   await drawStroke(page, [
     [500, 500],
-    [500, 1150],
+    [500, 1080],
   ]);
   await expect(page.getByTestId("outside-frame")).toBeVisible();
   // 元に戻すと消える
