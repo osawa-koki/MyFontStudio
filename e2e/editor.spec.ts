@@ -255,3 +255,23 @@ test("Ctrl/Cmd+S で文字を保存し、Ctrl/Cmd+Shift+S で zip に保存す�
   await page.keyboard.press("ControlOrMeta+s");
   expect((await downloading).suggestedFilename()).toMatch(/\.zip$/);
 });
+
+test("枠の外までドラッグした線は、枠の外にはみ出したことを知らせる", async ({ page }) => {
+  await page.goto("./editor");
+  await page.getByLabel("追加する文字列").fill("あ");
+  await page.getByLabel("追加する文字列").press("ControlOrMeta+Enter");
+  await drawStroke(page, [
+    [300, 500],
+    [700, 500],
+  ]);
+  await expect(page.getByTestId("outside-frame")).toHaveCount(0);
+  // Canvas の下の外まで動かす（描き始めにポインターをキャプチャするので、外でも記録が続く）
+  await drawStroke(page, [
+    [500, 500],
+    [500, 1150],
+  ]);
+  await expect(page.getByTestId("outside-frame")).toBeVisible();
+  // 元に戻すと消える
+  await page.getByRole("button", { name: "元に戻す" }).click();
+  await expect(page.getByTestId("outside-frame")).toHaveCount(0);
+});
