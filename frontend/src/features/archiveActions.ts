@@ -15,8 +15,19 @@ const MAX_ZIP_BYTES = 200 * 1024 * 1024;
 /** zip の保存が動いているか（ボタンとショートカットから重ねて動かさない） */
 let savingZip = false;
 
-/** 「zip で保存」（仕様 7.4）。描きかけの文字があれば、先に保存するか確かめる。保存の途中なら何もしない */
+/** プロジェクトを開いていないときに「zip で保存」したときの案内 */
+export const NO_PROJECT_MESSAGE =
+  "保存するプロジェクトを開いていません。プロジェクトを開いてから保存してください";
+
+/**
+ * 「zip で保存」（仕様 7.4）。描きかけの文字があれば、先に保存するか確かめる。保存の途中なら何もしない。
+ * プロジェクトを開いていなければ（使い方ページを直接開いた直後・開いていたものを削除したあと）、保存せずに知らせる
+ */
 export async function saveZip(): Promise<void> {
+  if (!useProjectStore.getState().projectId) {
+    notify(NO_PROJECT_MESSAGE);
+    return;
+  }
   // ほかのタブで編集しているときは、このタブの古い内容で書き出さない
   if (isLockedOut()) {
     notify(LOCKED_OUT_MESSAGE);
