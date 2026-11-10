@@ -79,6 +79,7 @@ async function measureSave(count: number, limitMs: number) {
       e.forEach(([k, v]) => data.set(k, structuredClone(v))),
     del: async (k: string) => void data.delete(k),
     delMany: async (ks: string[]) => ks.forEach((k) => data.delete(k)),
+    keys: async () => [...data.keys()],
   };
   const project = createEmptyProject();
   for (let i = 0; i < count; i++) {

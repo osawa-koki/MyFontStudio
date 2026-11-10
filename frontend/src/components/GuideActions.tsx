@@ -36,7 +36,13 @@ export function GuideActions() {
       "danger",
     );
     if (!ok) return;
-    await deleteStoredProject(p.id);
+    if (!(await deleteStoredProject(p.id))) {
+      notify(
+        "このプロジェクトはほかのタブで開いているので、削除できません。そのタブを閉じてから削除してください",
+        "error",
+      );
+      return;
+    }
     notify("プロジェクトを削除しました", "success");
     refresh();
   };
