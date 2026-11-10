@@ -326,3 +326,50 @@ test("作成済みの文字を変えずに Enter で進んでも、保存し直�
   await expect(page.getByTestId("current-char")).toHaveText("う");
   await expect(page.getByText("zip 未保存")).toHaveCount(0);
 });
+
+test("作成済みの文字の線をすべて消すと、保存で未作成に戻せる（zip で保存の確認が出続けない）", async ({
+  page,
+}) => {
+  await page.goto("./editor");
+  await page.getByLabel("追加する文字列").fill("あい");
+  await page.getByLabel("追加する文字列").press("ControlOrMeta+Enter");
+  await drawStroke(page, [
+    [200, 500],
+    [800, 500],
+  ]);
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(page.getByLabel("登録済み文字数")).toHaveText("1 文字");
+
+  // 作成済みの「あ」の線をクリアすると、ボタンは「未作成に戻す」になる。確かめてから戻す
+  await chip(page, "あ").click();
+  await page.getByRole("button", { name: "クリア" }).click();
+  await page.getByRole("button", { name: "未作成に戻す" }).click();
+  await page
+    .getByRole("dialog", { name: "「あ」を未作成に戻しますか？" })
+    .getByRole("button", { name: "未作成に戻す" })
+    .click();
+  await expect(page.getByLabel("登録済み文字数")).toHaveText("0 文字");
+  await expect(chip(page, "あ")).toHaveAccessibleName(/未作成/);
+
+  // もう一度描いて保存し、線を消したまま zip で保存すると、確認の「保存する」で未作成に戻り、次は聞かれない
+  await chip(page, "あ").click();
+  await drawStroke(page, [
+    [200, 500],
+    [800, 500],
+  ]);
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await chip(page, "あ").click();
+  await page.getByRole("button", { name: "クリア" }).click();
+  let downloading = page.waitForEvent("download");
+  await page.getByRole("button", { name: "zip で保存" }).click();
+  await page
+    .getByRole("dialog", { name: "この文字も保存しますか？" })
+    .getByRole("button", { name: "保存する" })
+    .click();
+  await downloading;
+  await expect(page.getByLabel("登録済み文字数")).toHaveText("0 文字");
+  downloading = page.waitForEvent("download");
+  await page.getByRole("button", { name: "zip で保存" }).click();
+  await downloading;
+  await expect(page.getByRole("dialog", { name: "この文字も保存しますか？" })).toHaveCount(0);
+});
