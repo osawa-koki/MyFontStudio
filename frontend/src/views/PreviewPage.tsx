@@ -5,9 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { downloadFont } from "../features/actions";
 import { NotdefBox } from "../components/NotdefBox";
-import { parseInputChars } from "../lib/project/chars";
 import { projectHref } from "../lib/projects/repository";
-import { missingChars, splitPreviewText } from "../lib/project/preview";
+import { classifyMissing, missingChars, splitPreviewText } from "../lib/project/preview";
 import { useFontStore } from "../store/fontStore";
 import { TEXT_COLORS, usePreviewStore, type MissingMode } from "../store/previewStore";
 import { useProjectStore } from "../store/projectStore";
@@ -48,6 +47,8 @@ export function PreviewPage() {
 
   const segments = useMemo(() => splitPreviewText(previewText, chars), [previewText, chars]);
   const missing = useMemo(() => missingChars(previewText, chars), [previewText, chars]);
+  // 絵文字などは一覧に追加できないので、分けて出す
+  const { addable, unsupported } = useMemo(() => classifyMissing(missing), [missing]);
 
   if (outlineCount === 0 || !family) {
     return (
@@ -79,12 +80,11 @@ export function PreviewPage() {
   };
 
   const addMissing = () => {
-    const { accepted } = parseInputChars(missing.join(""));
     const store = useProjectStore.getState();
-    store.addChars(accepted);
-    const first = accepted[0];
+    store.addChars(addable);
+    const first = addable[0];
     if (first) store.setCurrentChar(first);
-    notify(`${accepted.length} 文字を入力ページの一覧に追加しました`, "success");
+    notify(`${addable.length} 文字を入力ページの一覧に追加しました`, "success");
     router.push(projectHref("/editor", projectId));
   };
 
@@ -207,12 +207,24 @@ export function PreviewPage() {
           <p className="text-sm text-green-800">文章の文字はすべて作成済みです</p>
         ) : (
           <>
-            <p className="text-lg tracking-wider break-all">{missing.join(" ")}</p>
-            <div>
-              <button type="button" className="btn btn-primary" onClick={addMissing}>
-                入力ページに追加して描く
-              </button>
-            </div>
+            {addable.length > 0 && (
+              <>
+                <p className="text-lg tracking-wider break-all" data-testid="missing-addable">
+                  {addable.join(" ")}
+                </p>
+                <div>
+                  <button type="button" className="btn btn-primary" onClick={addMissing}>
+                    入力ページに追加して描く
+                  </button>
+                </div>
+              </>
+            )}
+            {unsupported.length > 0 && (
+              <p className="text-sm text-slate-600" data-testid="missing-unsupported">
+                対応していない文字（絵文字・結合文字など）は、フォントに追加できません：
+                <span className="ml-1 tracking-wider break-all">{unsupported.join(" ")}</span>
+              </p>
+            )}
           </>
         )}
       </section>

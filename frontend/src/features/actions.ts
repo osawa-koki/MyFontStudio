@@ -2,13 +2,18 @@ import { downloadBlob } from "../lib/download";
 import type { FontFormat } from "../lib/font/build";
 import { collectOutlinesAsync } from "../lib/font/outlines";
 import { notify } from "../store/uiStore";
+import { confirmCommitDrafts } from "./draftPrompt";
 import { TaskCancelledError, runInWorker } from "./worker";
 import { useProjectStore } from "../store/projectStore";
 
 const MIME: Record<FontFormat, string> = { ttf: "font/ttf", otf: "font/otf" };
 
-/** フォントを書き出してダウンロードさせる。書き出し回数を 1 加算する（バージョンに入る） */
+/**
+ * フォントを書き出してダウンロードさせる。書き出し回数を 1 加算する（バージョンに入る）。
+ * 描きかけの文字があれば、先に保存するか確かめる（保存しないとフォントに入らない）
+ */
 export async function downloadFont(format: FontFormat): Promise<void> {
+  if (!(await confirmCommitDrafts("保存しない文字は、フォントに入りません"))) return;
   const store = useProjectStore.getState();
   const outlines = (await collectOutlinesAsync(store.project)) ?? [];
   if (outlines.length === 0) {
