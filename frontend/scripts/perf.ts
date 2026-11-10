@@ -1,6 +1,6 @@
 // 性能の確認（仕様 10.1）：グリフ保存からプレビュー反映まで、300 文字で 0.5 秒・2,000 文字で 2 秒以内。
 // ダミーの手書きデータ（1 文字 6 本・各 40 点ほど）で、輪郭の計算とフォントの生成にかかる時間を測る。
-// 使い方：npm run perf
+// 使い方：npm run perf（CI では PERF_LIMIT_FACTOR で上限に係数を掛ける。GitHub Actions のマシンは手元より遅く、ばらつくため）
 import { buildFont, collectOutlines } from "../src/lib/font/build";
 import { createEmptyProject } from "../src/lib/project/project";
 import type { GlyphData, Stroke } from "../src/types/project";
@@ -110,5 +110,16 @@ async function measureSave(count: number, limitMs: number) {
   return ok;
 }
 
-const results = [measure(300, 500), measure(2000, 2000), await measureSave(2000, 50)];
+/** 上限に掛ける係数（既定は 1。仕様 10.1 の目安そのもの） */
+const factor = Number(process.env.PERF_LIMIT_FACTOR ?? "1");
+if (!(factor >= 1))
+  throw new Error(`PERF_LIMIT_FACTOR は 1 以上の数：${process.env.PERF_LIMIT_FACTOR}`);
+if (factor !== 1) console.log(`上限に ${factor} を掛けて確かめる（PERF_LIMIT_FACTOR）`);
+const limit = (ms: number) => ms * factor;
+
+const results = [
+  measure(300, limit(500)),
+  measure(2000, limit(2000)),
+  await measureSave(2000, limit(50)),
+];
 if (results.includes(false)) process.exit(1);

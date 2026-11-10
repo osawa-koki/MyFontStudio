@@ -41,6 +41,16 @@ jobs:
         run: |
           npm run test:coverage | tee coverage.txt
           { echo '### frontend のカバレッジ'; echo '```'; sed -n '/Coverage summary/,$p' coverage.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      # 性能の目安（仕様 10.1）。GitHub Actions のマシンは手元より遅く、ばらつくので、上限に係数を掛ける。
+      # 結果はジョブのサマリーに出す
+      - name: Performance (npm run perf)
+        shell: bash
+        env:
+          PERF_LIMIT_FACTOR: "3"
+        run: |
+          set -o pipefail
+          npm run perf --silent | tee perf.txt
+          { echo '### 性能（npm run perf、上限 ×3）'; echo '```'; cat perf.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       # 固定のストロークから .ttf・.otf を作り、fontTools で両形式の値が一致すること、OTS の検証に通ることを確かめる
       - name: Check generated fonts (fontTools, OTS)
         run: |
