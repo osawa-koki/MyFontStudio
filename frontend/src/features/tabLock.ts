@@ -24,11 +24,14 @@ const hasLocks = () =>
   typeof navigator !== "undefined" && typeof navigator.locks?.request === "function";
 const supported = () => hasLocks() && typeof BroadcastChannel !== "undefined";
 
-/** ロックを取る。waitIfHeld なら空くまで待つ。取れたら true */
-function lock(id: string, waitIfHeld: boolean): Promise<boolean> {
+/** 引き継ぎを頼んでから、ほかのタブがロックを手放すまで待つ時間 */
+export const TAKEOVER_TIMEOUT_MS = 5000;
+
+/** ロックを取る。waitIfHeld なら空くまで待つ（signal で待つのをやめる）。取れたら true */
+function lock(id: string, waitIfHeld: boolean, signal?: AbortSignal): Promise<boolean> {
   return new Promise((resolve) => {
     navigator.locks
-      .request(lockName(id), waitIfHeld ? {} : { ifAvailable: true }, (l) => {
+      .request(lockName(id), waitIfHeld ? { signal } : { ifAvailable: true }, (l) => {
         if (!l) {
           resolve(false);
           return undefined;
@@ -64,13 +67,26 @@ function getChannel(): BroadcastChannel {
   return channel;
 }
 
-/** このタブで編集できるようにする（ほかのタブの編集を止めてもらい、最新の内容を読み直す） */
+/**
+ * このタブで編集できるようにする（ほかのタブの編集を止めてもらい、最新の内容を読み直す）。
+ * 待っている間は takeover（編集画面を出さない）。TAKEOVER_TIMEOUT_MS たってもロックが取れなければ
+ * （ほかのタブが凍結されている・古い版で応答しないなど）、待つのをやめて blocked に戻し、takeoverFailedId にこのプロジェクトを入れる
+ */
 export async function takeOverProject(id: string): Promise<void> {
   if (!supported()) return;
   const store = useTabLockStore.getState();
-  store.set("pending", id);
+  store.setTakeoverFailed(null);
+  store.set("takeover", id);
   getChannel().postMessage({ type: "takeover", id } satisfies Message);
-  await lock(id, true);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TAKEOVER_TIMEOUT_MS);
+  const ok = await lock(id, true, controller.signal);
+  clearTimeout(timer);
+  if (!ok) {
+    useTabLockStore.getState().set("blocked", id);
+    useTabLockStore.getState().setTakeoverFailed(id);
+    return;
+  }
   await reloadProject(id);
   useTabLockStore.getState().set("owner", id);
 }

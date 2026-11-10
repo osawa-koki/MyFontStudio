@@ -6,7 +6,7 @@ import { useProjectFromUrl } from "../features/projects";
 import { unreadableMessage } from "../lib/projects/repository";
 import { takeOverProject } from "../features/tabLock";
 import { useProjectStore } from "../store/projectStore";
-import { useTabLockStore } from "../store/tabLockStore";
+import { takeoverFailedFor, useTabLockStore } from "../store/tabLockStore";
 
 /** URL の ?uuid= のプロジェクトを開いてから中身を表示する */
 export function ProjectGate({ children }: { children: ReactNode }) {
@@ -15,6 +15,8 @@ export function ProjectGate({ children }: { children: ReactNode }) {
   const projectId = useProjectStore((s) => s.projectId);
   // ロックは AppShell で、開いているプロジェクトについて取る
   const lock = useTabLockStore((s) => (s.projectId === projectId ? s.status : "pending"));
+  // 引き継げなかったのが、このプロジェクトのときだけ出す
+  const takeoverFailed = useTabLockStore((s) => takeoverFailedFor(s, projectId));
   if (state === "invalid") {
     return (
       <section className="flex flex-col items-center gap-4 py-16 text-center">
@@ -56,6 +58,14 @@ export function ProjectGate({ children }: { children: ReactNode }) {
       </p>
     );
   }
+  if (lock === "takeover") {
+    // 引き継いでいる途中は、読み直すまで古い内容なので、編集画面を出さない（描いても読み直しで消えるため）
+    return (
+      <p className="py-16 text-center text-slate-500" role="status">
+        ほかのタブの編集を止めています…
+      </p>
+    );
+  }
   if (lock === "blocked" || lock === "released") {
     return (
       <section className="flex flex-col items-center gap-4 py-16 text-center" role="alert">
@@ -64,6 +74,11 @@ export function ProjectGate({ children }: { children: ReactNode }) {
             ? "このプロジェクトはほかのタブで開いています"
             : "ほかのタブでこのプロジェクトを開いたので、このタブでは編集を止めました"}
         </h1>
+        {lock === "blocked" && takeoverFailed && (
+          <p className="max-w-xl text-sm font-bold text-red-700">
+            ほかのタブが応答しないため、引き継げませんでした。ほかのタブを開いて（または閉じて）から、もう一度試してください。
+          </p>
+        )}
         <p className="max-w-xl text-sm text-slate-600">
           同じプロジェクトを 2
           つのタブで編集すると、あとから保存した方で上書きされてしまうため、編集できるタブは 1
@@ -75,7 +90,7 @@ export function ProjectGate({ children }: { children: ReactNode }) {
             className="btn btn-primary"
             onClick={() => projectId && void takeOverProject(projectId)}
           >
-            このタブで編集する
+            {lock === "blocked" && takeoverFailed ? "もう一度試す" : "このタブで編集する"}
           </button>
           <Link href="/" className="btn">
             プロジェクトの一覧へ

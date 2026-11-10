@@ -417,3 +417,41 @@ test("使い方ページに移ってもロックを持ち続け、あとから�
   await expect(page.getByRole("dialog", { name: "フォントの設定" })).toBeVisible();
   await second.close();
 });
+
+test("引き継いでいる途中は編集画面を出さず、ほかのタブが応答しなければ待つのをやめて、もう一度試せる", async ({
+  page,
+  context,
+}) => {
+  await page.goto("./editor");
+  await expect(page).toHaveURL(UUID_URL);
+  const url = page.url();
+  const id = uuidOf(page);
+  await addAndDraw(page, "甲");
+  await waitForStored(page, `myfontstudio:project:${id}`, (v) => !!v);
+
+  // 応答しないタブの代わり：アプリのないページ（同じオリジン）でロックを持ち続け、引き継ぎの頼みに応じない
+  await page.goto("./icon.svg");
+  await page.evaluate((name) => {
+    void navigator.locks.request(name, () => new Promise(() => {}));
+  }, `myfontstudio:project:${id}`);
+
+  const second = await context.newPage();
+  await second.goto(url);
+  await expect(
+    second.getByRole("heading", { name: "このプロジェクトはほかのタブで開いています" }),
+  ).toBeVisible();
+  await second.getByRole("button", { name: "このタブで編集する" }).click();
+  // 引き継いでいる途中は、古い内容の編集画面を出さない
+  await expect(second.getByText("ほかのタブの編集を止めています…")).toBeVisible();
+  await expect(second.getByTestId("drawing-canvas")).toHaveCount(0);
+  // 応答がなければ待つのをやめ、理由と「もう一度試す」を出す
+  await expect(second.getByText(/ほかのタブが応答しないため、引き継げませんでした/)).toBeVisible({
+    timeout: 15_000,
+  });
+
+  // ロックを持っていたタブを閉じれば、もう一度試して編集できる
+  await page.close();
+  await second.getByRole("button", { name: "もう一度試す" }).click();
+  await expect(second.getByTestId("drawing-canvas")).toBeVisible();
+  await expect(second.getByLabel("登録済み文字数")).toHaveText("1 文字");
+});
