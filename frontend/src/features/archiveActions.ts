@@ -5,10 +5,9 @@ import { isoWithOffset } from "../lib/project/chars";
 import { openAsNewProject } from "./projects";
 import { useProjectStore } from "../store/projectStore";
 import { LOCKED_OUT_MESSAGE, isLockedOut } from "../store/tabLockStore";
-import { askDialog, notify } from "../store/uiStore";
-import { commitDraft } from "./glyphActions";
+import { notify } from "../store/uiStore";
+import { confirmCommitDrafts } from "./draftPrompt";
 import { TaskCancelledError, runInWorker } from "./worker";
-import { unsavedDraftChars } from "./unsavedWarning";
 
 /** 読み込める zip の大きさの上限（圧縮後） */
 const MAX_ZIP_BYTES = 200 * 1024 * 1024;
@@ -36,21 +35,7 @@ export async function saveZip(): Promise<void> {
 }
 
 async function saveZipOnce(): Promise<void> {
-  const drafts = unsavedDraftChars();
-  if (drafts.length > 0) {
-    const { value } = await askDialog({
-      title: "この文字も保存しますか？",
-      message: `グリフとして保存していない描きかけの線があります：${drafts.join(" ")}（描いた履歴は保存しないを選んでも zip に入ります）`,
-      buttons: [
-        { label: "キャンセル", value: "cancel" },
-        { label: "保存しない", value: "skip" },
-        { label: "保存する", value: "save", variant: "primary" },
-      ],
-      cancelValue: "cancel",
-    });
-    if (value === "cancel") return;
-    if (value === "save") drafts.forEach(commitDraft);
-  }
+  if (!(await confirmCommitDrafts("描いた履歴は、保存しないを選んでも zip に入ります"))) return;
 
   // zip に入れるのは、この時点の内容。書き出し回数は保存できてから加算する
   const { project, revision } = useProjectStore.getState();
