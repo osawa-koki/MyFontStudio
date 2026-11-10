@@ -203,6 +203,8 @@ export async function loadProject(kv: KeyValueStore, id: string): Promise<Stored
   } catch {
     throw new ProjectUnreadableError("error");
   }
+  // 削除の途中で閉じたもの（起動時の片付けで消える）は、保存していないものとして扱う
+  if (isDeleting(raw)) return null;
   if (raw === undefined) {
     // 一覧にあるのにデータがないなら、「保存していない」ではない
     if ((await listProjects(kv)).some((s) => s.id === id))
@@ -302,11 +304,32 @@ export async function saveProject(
   }
 }
 
-/** プロジェクトを消す。先に一覧から外す（途中で閉じても、一覧に消えたプロジェクトが残らないように） */
+/**
+ * 削除の途中のメタデータか。削除は 2 回に分けて書くので、1 回目で一覧から外すのと同時に、メタデータにこの印を付ける。
+ * 2 回目（キーの削除）の前に閉じても、起動時の片付けで一覧に戻さずに消し、読み込みでも「ない」として扱う
+ */
+export function isDeleting(raw: unknown): boolean {
+  return (
+    typeof raw === "object" && raw !== null && (raw as { deleting?: unknown }).deleting === true
+  );
+}
+
+/**
+ * プロジェクトを消す。2 回に分けて書く：1 回目で一覧から外すのと同時に、メタデータに「削除中」の印を付け
+ * （1 つのトランザクション）、2 回目でメタデータとグリフ・描いた履歴のキーを消す。
+ * 2 回目の前に閉じても、一覧に消えたプロジェクトは残らず、起動時の片付けで一覧に戻さずに消す（isDeleting）
+ */
 export async function deleteProject(kv: KeyValueStore, id: string): Promise<void> {
   const list = (await listProjects(kv)).filter((s) => s.id !== id);
-  await kv.set(INDEX_KEY, list);
-  const meta = metaSchema.safeParse(await kv.get(projectKey(id)).catch(() => null));
+  const raw = await kv.get(projectKey(id)).catch(() => undefined);
+  // 一覧から外すのと、メタデータに「削除中」の印を付けるのは、1 つのトランザクションで書く
+  await kv.setMany([
+    [INDEX_KEY, list],
+    ...(typeof raw === "object" && raw !== null
+      ? [[projectKey(id), { ...raw, deleting: true }] as [string, unknown]]
+      : []),
+  ]);
+  const meta = metaSchema.safeParse(raw);
   const keys = meta.success
     ? [
         ...singleChars(meta.data.glyphChars).map((c) => glyphKey(id, c)),
@@ -325,6 +348,7 @@ const META_KEY = /^myfontstudio:project:([0-9a-f-]{36})$/;
  * 起動のたびに動き、元に戻せない処理なので、消すのは次のキーだけにする
  * - メタデータのないプロジェクトのグリフ・描いた履歴
  * - メタデータの文字の一覧（glyphChars・drawingChars）にないグリフ・描いた履歴
+ * - 削除の途中で閉じたプロジェクト（メタデータに「削除中」の印がある）のメタデータとグリフ・描いた履歴
  * 一覧を読めない（例外・値がない・配列でない）ときは何もしない（例外はそのまま投げる）。
  * 一覧にないメタデータ（壊れていないもの）は消さずに一覧へ戻す。読めないメタデータのプロジェクトは触らない
  */
@@ -347,7 +371,13 @@ export async function cleanupOrphanKeys(
   const metas = new Map<string, { glyph: Set<string>; drawing: Set<string> }>();
   const untouched = new Set<string>();
   const restored: ProjectSummary[] = [];
+  const orphans: string[] = [];
   metaIds.forEach((id, i) => {
+    // 削除の途中で閉じたプロジェクトは、一覧に戻さずに、メタデータも文字のキーも消す
+    if (isDeleting(values[i])) {
+      orphans.push(projectKey(id));
+      return;
+    }
     const meta = metaSchema.safeParse(values[i]);
     // 読めないメタデータ（形式 1 など）のプロジェクトは、文字のキーも触らない
     if (!meta.success) {
@@ -368,7 +398,6 @@ export async function cleanupOrphanKeys(
     const labels = (chars: string[]) => new Set(singleChars(chars).map(toCodepointLabel));
     metas.set(id, { glyph: labels(glyphChars), drawing: labels(drawingChars) });
   });
-  const orphans: string[] = [];
   for (const k of keys) {
     const m = CHAR_KEY.exec(k);
     if (!m) continue;
