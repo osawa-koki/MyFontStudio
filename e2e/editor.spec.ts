@@ -255,3 +255,24 @@ test("Ctrl/Cmd+S で文字を保存し、Ctrl/Cmd+Shift+S で zip に保存す�
   await page.keyboard.press("ControlOrMeta+s");
   expect((await downloading).suggestedFilename()).toMatch(/\.zip$/);
 });
+
+test("文字一覧の文字は、キーボードだけで削除できる（Delete・Backspace）", async ({ page }) => {
+  await page.goto("./editor");
+  await page.getByLabel("追加する文字列").fill("あいう");
+  await page.getByLabel("追加する文字列").press("ControlOrMeta+Enter");
+  const list = page.getByRole("region", { name: "文字一覧" });
+  await expect(list.getByRole("listitem")).toHaveCount(3);
+  // 削除の方法はスクリーンリーダーにも伝える
+  await expect(chip(page, "い")).toHaveAccessibleDescription(/Delete キー/);
+
+  await chip(page, "い").focus();
+  await page.keyboard.press("Delete");
+  const dialog = page.getByRole("dialog", { name: "「い」を一覧から削除しますか？" });
+  await dialog.getByRole("button", { name: "削除" }).click();
+  await expect(list.getByRole("listitem")).toHaveCount(2);
+
+  await chip(page, "う").focus();
+  await page.keyboard.press("Backspace");
+  await page.getByRole("dialog").getByRole("button", { name: "キャンセル" }).click();
+  await expect(list.getByRole("listitem")).toHaveCount(2);
+});

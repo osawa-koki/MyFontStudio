@@ -114,7 +114,9 @@ test("ヘッダーのメニューから、新しいプロジェクトの作成�
 }) => {
   await page.goto("./");
   const switcher = page.getByRole("button", { name: /^プロジェクト：/ });
-  await expect(switcher).toHaveAccessibleName("プロジェクト：未選択（クリックで切り替え）");
+  await expect(switcher).toHaveAccessibleName(
+    "プロジェクト：プロジェクトを選ぶ（クリックで切り替え）",
+  );
 
   // 新しいプロジェクト（1 つ目）
   await switcher.click();

@@ -180,7 +180,7 @@ export function EditorPage() {
           >
             <label className="text-sm text-slate-600" htmlFor="chars-input">
               追加する文字列
-              <span className="ml-2 text-xs text-slate-400">
+              <span className="ml-2 text-xs text-slate-500">
                 複数行でも入力できます（改行・空白は除きます）。Ctrl/⌘+Enter でも追加
               </span>
             </label>
