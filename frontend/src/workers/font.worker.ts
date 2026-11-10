@@ -5,6 +5,8 @@ import { runTask, type Progress, type Task } from "./tasks";
 
 export type WorkerRequest = { id: number; task: Task };
 export type WorkerResponse =
+  /** 読み込めた（画面で、読み込みの失敗と処理の途中の失敗を見分ける） */
+  | { id: 0; type: "ready" }
   | { id: number; type: "progress"; progress: Progress }
   | { id: number; type: "done"; result: unknown }
   | { id: number; type: "error"; message: string; archive: boolean };
@@ -13,6 +15,8 @@ const ctx = self as unknown as {
   onmessage: ((e: MessageEvent<WorkerRequest>) => void) | null;
   postMessage(message: WorkerResponse, transfer?: Transferable[]): void;
 };
+
+ctx.postMessage({ id: 0, type: "ready" });
 
 ctx.onmessage = async (e) => {
   const { id, task } = e.data;
