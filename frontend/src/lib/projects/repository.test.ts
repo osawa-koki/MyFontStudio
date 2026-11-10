@@ -296,6 +296,28 @@ describe("ほかのタブでの削除と、参照されないキー", () => {
     expect(await cleanupOrphanKeys(kv)).toEqual({ removed: 0, restored: 0 });
   });
 
+  it("削除の途中（一覧から外したあと、キーを消す前）で止まっても、片付けで一覧に戻さずに消す", async () => {
+    const kv = memoryStore();
+    await saveProject(kv, ID_A, sample(), false);
+    await saveProject(kv, ID_B, sample(), false);
+    // キーの削除（2 回目の書き込み）だけが失敗した＝そこでタブを閉じた
+    const stopped: KeyValueStore = {
+      ...kv,
+      delMany: () => Promise.reject(new Error("closed")),
+    };
+    await expect(deleteProject(stopped, ID_A)).rejects.toThrow("closed");
+    expect((await listProjects(kv)).map((s) => s.id)).toEqual([ID_B]);
+    expect(kv.data.has(projectKey(ID_A))).toBe(true);
+    // 開こうとしても「保存していない」として扱う
+    expect(await loadProject(kv, ID_A)).toBeNull();
+
+    expect(await cleanupOrphanKeys(kv)).toEqual({ removed: 2, restored: 0 });
+    expect(kv.data.has(projectKey(ID_A))).toBe(false);
+    expect(kv.data.has(glyphKey(ID_A, "口"))).toBe(false);
+    expect((await listProjects(kv)).map((s) => s.id)).toEqual([ID_B]);
+    expect(await loadProject(kv, ID_B)).toEqual({ project: sample(), dirty: false });
+  });
+
   it("一覧を読めない（例外・値がない・配列でない）ときは、何も消さない", async () => {
     const kv = memoryStore();
     await saveProject(kv, ID_A, sample(), false);
