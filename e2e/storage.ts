@@ -26,6 +26,28 @@ export async function readStored(page: Page, key: string): Promise<unknown> {
   );
 }
 
+/** IndexedDB（idb-keyval の keyval-store）に値を書く（保存したデータが壊れた・新しい形式の場合を作るため） */
+export async function writeStored(page: Page, key: string, value: unknown): Promise<void> {
+  await page.evaluate(
+    ([k, v]) =>
+      new Promise<void>((resolve, reject) => {
+        const open = indexedDB.open("keyval-store");
+        open.onerror = () => reject(open.error);
+        open.onsuccess = () => {
+          const db = open.result;
+          const tx = db.transaction("keyval", "readwrite");
+          tx.objectStore("keyval").put(v, k);
+          tx.oncomplete = () => {
+            db.close();
+            resolve();
+          };
+          tx.onerror = () => reject(tx.error);
+        };
+      }),
+    [key, value] as const,
+  );
+}
+
 /** 保存した値が条件を満たすまで待つ（自動保存を時間で待たない） */
 export async function waitForStored(
   page: Page,

@@ -1,6 +1,19 @@
 import { describe, expect, it } from "vitest";
-import type { StrokePoint } from "../../types/project";
-import { appendPoint, clientToEm, resolvePressure, roundPoint } from "./record";
+import type { Stroke, StrokePoint } from "../../types/project";
+import { WIN_ASCENT, WIN_DESCENT } from "../font/metrics";
+import { glyphToOutline } from "../glyph/outline";
+import { contoursBounds } from "../glyph/width";
+import { PEN_SIZE_MAX } from "../project/project";
+import { makeGlyph } from "../testing/fixtures";
+import {
+  appendPoint,
+  clampToDrawingArea,
+  clientToEm,
+  drawingBounds,
+  hasStrokeOutsideFrame,
+  resolvePressure,
+  roundPoint,
+} from "./record";
 
 describe("roundPoint", () => {
   it("x, y は小数 1 桁、pressure は 2 桁。pressure は 0〜1 に収める", () => {
@@ -49,5 +62,42 @@ describe("resolvePressure", () => {
   it("マウス・指は速度から推定する", () => {
     expect(resolvePressure("mouse", 0.5, true)).toEqual({ pressure: 0.5, simulate: true });
     expect(resolvePressure("touch", 0.3, true)).toEqual({ pressure: 0.5, simulate: true });
+  });
+});
+
+describe("記録する範囲（枠の外）", () => {
+  const pen = { size: 40, thinning: 0.5 };
+  it("左右は枠の外 200 まで、上下は Windows で欠けない範囲から線の太さの半分を引いた範囲", () => {
+    expect(drawingBounds(pen)).toEqual({ xMin: -200, xMax: 1200, yMin: -90, yMax: 1050 });
+    expect(clampToDrawingArea(-5000, -5000, pen)).toEqual([-200, -90]);
+    expect(clampToDrawingArea(5000, 5000, pen)).toEqual([1200, 1050]);
+    expect(clampToDrawingArea(500, 1020, pen)).toEqual([500, 1020]);
+  });
+
+  it("範囲の端に、いちばん太いペン・最大の筆圧で描いても、輪郭は usWinAscent・usWinDescent の内側に収まる", () => {
+    const thick = { size: PEN_SIZE_MAX, thinning: 0.5, smoothing: 0.5, streamline: 0.5 };
+    const b = drawingBounds(thick);
+    const line = (y: number): Stroke => ({
+      points: [
+        [b.xMin, y, 1],
+        [500, y, 1],
+        [b.xMax, y, 1],
+      ],
+      simulatePressure: false,
+    });
+    const glyph = {
+      ...makeGlyph("あ", [line(b.yMin), line(b.yMax)]),
+      pen: { ...thick, simulatePressure: false },
+    };
+    const bounds = contoursBounds(glyphToOutline(glyph).contours)!;
+    expect(bounds.yMax).toBeLessThanOrEqual(WIN_ASCENT);
+    expect(bounds.yMin).toBeGreaterThanOrEqual(-WIN_DESCENT);
+  });
+
+  it("枠の外に出た点のある線があるか", () => {
+    const s = (x: number, y: number): Stroke => ({ points: [[x, y, 0.5]] });
+    expect(hasStrokeOutsideFrame([s(0, 0), s(1000, 1000)])).toBe(false);
+    expect(hasStrokeOutsideFrame([s(500, 500), s(-1, 500)])).toBe(true);
+    expect(hasStrokeOutsideFrame([s(500, 1001)])).toBe(true);
   });
 });

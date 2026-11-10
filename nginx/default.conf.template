@@ -41,6 +41,12 @@ server {
         try_files $uri =404;
     }
 
+    # Web Worker。ファイル名に中身のハッシュが付く（npm run build:worker）ので、長くキャッシュする
+    location ~ ^/workers/font\.worker-[A-Za-z0-9]+\.js$ {
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        try_files $uri =404;
+    }
+
     # ページは事前に作った HTML（/editor でも /editor/ でも editor/index.html）。毎回確かめる
     location / {
         add_header Cache-Control "no-cache" always;

@@ -1,6 +1,6 @@
 import { ArchiveError } from "../lib/archive/common";
 import { renderOutlinePng } from "../lib/glyph/png";
-import { useTaskStore } from "../store/taskStore";
+import { busyMessage, useTaskStore } from "../store/taskStore";
 import type { WorkerRequest, WorkerResponse } from "../workers/font.worker";
 import type { Task, TaskResult } from "../workers/tasks";
 
@@ -8,6 +8,16 @@ import type { Task, TaskResult } from "../workers/tasks";
 export class TaskCancelledError extends Error {
   constructor() {
     super("取り消しました");
+  }
+}
+
+/**
+ * 進み具合を出す処理（label 付き）が、ほかに動いている。進み具合の表示と「取り消す」は 1 つだけなので、
+ * 同時には動かさない（取り消すと Worker ごと止めるので、ほかの処理まで止まってしまうため）
+ */
+export class TaskBusyError extends Error {
+  constructor(label: string) {
+    super(busyMessage(label));
   }
 }
 
@@ -29,6 +39,17 @@ if (typeof window !== "undefined") {
 /** ページを離れる途中か（このあいだは Worker を作らない。作っても読み込みが中断されるだけ） */
 export const isUnloading = () => unloading;
 
+/** Worker のファイルの URL（ファイル名は next.config.ts がビルド時に埋め込む） */
+export const workerUrl = () =>
+  `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/workers/${process.env.NEXT_PUBLIC_WORKER_FILE ?? "font.worker.js"}`;
+
+/**
+ * Worker を読み込めなかったとき（一度も応答しないまま失敗した）の文言。
+ * デプロイのあとに古い画面を開いたままだと、古い Worker のファイルがなくなっていて読み込めない
+ */
+export const WORKER_LOAD_FAILED_MESSAGE =
+  "処理の準備（Web Worker の読み込み）に失敗しました。アプリが更新された可能性があるので、ページを再読み込みしてください";
+
 let worker: Worker | null = null;
 let nextId = 1;
 const pending = new Map<
@@ -44,12 +65,14 @@ function getWorker(): Worker | null {
   if (typeof Worker === "undefined") return null;
   if (!worker) {
     // Worker は esbuild で別にバンドルして public/workers/ に置く（npm run build:worker。build・dev の前に自動で実行する）。
-    // Next.js（Turbopack）は new Worker(new URL(...)) の TypeScript をバンドルしないため
-    worker = new Worker(`${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/workers/font.worker.js`, {
-      type: "module",
-    });
+    // Next.js（Turbopack）は new Worker(new URL(...)) の TypeScript をバンドルしないため。
+    // ファイル名には中身のハッシュが付く（デプロイの前に開いた画面が、新しい Worker を読み込まないように）
+    worker = new Worker(workerUrl(), { type: "module" });
+    let started = false;
     worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
+      started = true;
       const msg = e.data;
+      if (msg.type === "ready") return;
       const p = pending.get(msg.id);
       if (!p) return;
       if (msg.type === "progress") p.onProgress?.(msg.progress);
@@ -67,7 +90,11 @@ function getWorker(): Worker | null {
         p.reject(
           unloading
             ? new TaskCancelledError()
-            : new WorkerCrashedError(e.message || "Web Worker でエラーが起きました"),
+            : new WorkerCrashedError(
+                started
+                  ? e.message || "Web Worker でエラーが起きました"
+                  : WORKER_LOAD_FAILED_MESSAGE,
+              ),
         );
       }
       pending.clear();
@@ -96,6 +123,7 @@ export async function runInWorker<T extends Task>(
 ): Promise<TaskResult<T>> {
   const id = nextId++;
   const tasks = useTaskStore.getState();
+  if (options.label && tasks.task) throw new TaskBusyError(tasks.task.label);
   if (options.label) {
     tasks.set({ id, label: options.label, done: 0, total: 0, cancel: terminate });
   }

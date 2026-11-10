@@ -2,13 +2,13 @@ import { ArchiveError, archiveFileName } from "../lib/archive/common";
 import { downloadBlob } from "../lib/download";
 import { collectOutlinesAsync } from "../lib/font/outlines";
 import { isoWithOffset } from "../lib/project/chars";
-import { openAsNewProject } from "./projects";
+import { sameFamilyName, sameFamilyNameMessage } from "../lib/projects/display";
+import { listStoredProjects, openAsNewProject } from "./projects";
 import { useProjectStore } from "../store/projectStore";
 import { LOCKED_OUT_MESSAGE, isLockedOut } from "../store/tabLockStore";
-import { askDialog, notify } from "../store/uiStore";
-import { commitDraft } from "./glyphActions";
-import { TaskCancelledError, runInWorker } from "./worker";
-import { unsavedDraftChars } from "./unsavedWarning";
+import { notify } from "../store/uiStore";
+import { confirmCommitDrafts } from "./draftPrompt";
+import { TaskBusyError, TaskCancelledError, runInWorker } from "./worker";
 
 /** 読み込める zip の大きさの上限（圧縮後） */
 const MAX_ZIP_BYTES = 200 * 1024 * 1024;
@@ -16,8 +16,19 @@ const MAX_ZIP_BYTES = 200 * 1024 * 1024;
 /** zip の保存が動いているか（ボタンとショートカットから重ねて動かさない） */
 let savingZip = false;
 
-/** 「zip で保存」（仕様 7.4）。描きかけの文字があれば、先に保存するか確かめる。保存の途中なら何もしない */
+/** プロジェクトを開いていないときに「zip で保存」したときの案内 */
+export const NO_PROJECT_MESSAGE =
+  "保存するプロジェクトを開いていません。プロジェクトを開いてから保存してください";
+
+/**
+ * 「zip で保存」（仕様 7.4）。描きかけの文字があれば、先に保存するか確かめる。保存の途中なら何もしない。
+ * プロジェクトを開いていなければ（使い方ページを直接開いた直後・開いていたものを削除したあと）、保存せずに知らせる
+ */
 export async function saveZip(): Promise<void> {
+  if (!useProjectStore.getState().projectId) {
+    notify(NO_PROJECT_MESSAGE);
+    return;
+  }
   // ほかのタブで編集しているときは、このタブの古い内容で書き出さない
   if (isLockedOut()) {
     notify(LOCKED_OUT_MESSAGE);
@@ -36,21 +47,7 @@ export async function saveZip(): Promise<void> {
 }
 
 async function saveZipOnce(): Promise<void> {
-  const drafts = unsavedDraftChars();
-  if (drafts.length > 0) {
-    const { value } = await askDialog({
-      title: "この文字も保存しますか？",
-      message: `グリフとして保存していない描きかけの線があります：${drafts.join(" ")}（描いた履歴は保存しないを選んでも zip に入ります）`,
-      buttons: [
-        { label: "キャンセル", value: "cancel" },
-        { label: "保存しない", value: "skip" },
-        { label: "保存する", value: "save", variant: "primary" },
-      ],
-      cancelValue: "cancel",
-    });
-    if (value === "cancel") return;
-    if (value === "save") drafts.forEach(commitDraft);
-  }
+  if (!(await confirmCommitDrafts("描いた履歴は、保存しないを選んでも zip に入ります"))) return;
 
   // zip に入れるのは、この時点の内容。書き出し回数は保存できてから加算する
   const { project, revision } = useProjectStore.getState();
@@ -89,6 +86,10 @@ async function saveZipOnce(): Promise<void> {
       notify("zip の保存を取り消しました");
       return;
     }
+    if (e instanceof TaskBusyError) {
+      notify(e.message);
+      return;
+    }
     console.error(e);
     notify(`zip に保存できませんでした：${e instanceof Error ? e.message : String(e)}`, "error");
   }
@@ -120,10 +121,18 @@ export async function openZip(file: File): Promise<string | null> {
     } else {
       notify(`「${file.name}」を新しいプロジェクトとして読み込みました`, "success");
     }
+    // 同じフォント名のプロジェクトがあれば知らせる（同じ zip を 2 回開いたときなど）
+    const { familyName } = project.font;
+    const same = sameFamilyName(familyName, await listStoredProjects(), id);
+    if (same.length > 0) notify(sameFamilyNameMessage(familyName, same));
     return id;
   } catch (e) {
     if (e instanceof TaskCancelledError) {
       notify("zip の読み込みを取り消しました");
+      return null;
+    }
+    if (e instanceof TaskBusyError) {
+      notify(e.message);
       return null;
     }
     const message = e instanceof ArchiveError ? e.message : "zip ファイルを読み込めませんでした";

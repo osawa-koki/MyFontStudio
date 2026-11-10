@@ -61,7 +61,8 @@ export function GuidePage() {
           <li>英数字（半角）は、描いた幅に合わせて詰めて並びます。漢字・かなは等幅です。</li>
           <li>
             キーボードでも操作できます：Enter・Ctrl/⌘+S で保存、← → で前・次の文字、Ctrl/⌘+Z
-            で元に戻す、Ctrl/⌘+Shift+S で zip に保存。
+            で元に戻す、Ctrl/⌘+Shift+S で zip に保存。文字一覧の文字は、Tab で選んで Delete
+            キーで削除できます（右クリック・長押しでも削除できます）。
           </li>
         </ul>
       </Section>
@@ -94,6 +95,11 @@ export function GuidePage() {
             ダウンロードした .ttf をダブルクリックし、Font Book で「インストール」を押します。
           </li>
         </ul>
+        <p>
+          フォント名が同じフォントは、同じフォントとして扱われます（あとから入れた方で上書きされます）。
+          家族で同じ PC
+          を使うときなど、別のフォントとして入れるなら、ヘッダーの「編集」でフォント名を変えてからダウンロードしてください。
+        </p>
       </Section>
 
       <Section id="word" title="6. Word で使うときの注意">
@@ -127,6 +133,12 @@ export function GuidePage() {
             <dd className="pl-4">
               古いフォントを削除してから新しいフォントを入れ、Word を再起動してください（Windows
               はフォントを覚えているため）。
+            </dd>
+          </div>
+          <div>
+            <dt className="font-bold">Q. 別に作ったフォントが消えた（上書きされた）</dt>
+            <dd className="pl-4">
+              フォント名が同じだと、あとからインストールしたフォントで上書きされます。プロジェクトごとに違うフォント名（ヘッダーの「編集」）にしてください。
             </dd>
           </div>
           <div>
