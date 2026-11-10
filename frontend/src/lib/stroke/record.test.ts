@@ -8,6 +8,10 @@ describe("roundPoint", () => {
     expect(roundPoint(-5.55, 1200, 1.5)).toEqual([-5.5, 1200, 1]);
     expect(roundPoint(0, 0, -1)).toEqual([0, 0, 0]);
   });
+  it("枠の外にはみ出した点は保持するが、枠の外 1em（-1000〜2000）までに収める", () => {
+    expect(roundPoint(-3000, 25000, 0.5)).toEqual([-1000, 2000, 0.5]);
+    expect(roundPoint(1999.96, -999.96, 0.5)).toEqual([2000, -1000, 0.5]);
+  });
 });
 
 describe("appendPoint", () => {

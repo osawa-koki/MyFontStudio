@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { STROKE_COORD_MAX, STROKE_COORD_MIN } from "../glyph/constants";
 
 // zod は速く検証するために new Function（eval）を使えるかを試す。CSP（script-src に 'unsafe-eval' を入れない）では
 // 止められ、Firefox ではコンソールのエラーになるので、使わない設定にする
@@ -21,8 +22,11 @@ export const penParamsSchema = z.object({
   streamline: finite.min(0).max(1),
 });
 
+/** 点の座標。範囲外の点はフォントの座標（16 ビット）に収まらないことがあるので、読み込まない */
+const coord = finite.min(STROKE_COORD_MIN).max(STROKE_COORD_MAX);
+
 const strokeSchema = z.object({
-  points: z.array(z.tuple([finite, finite, finite.min(0).max(1)])).max(100_000),
+  points: z.array(z.tuple([coord, coord, finite.min(0).max(1)])).max(100_000),
   simulatePressure: z.boolean().optional(),
 });
 

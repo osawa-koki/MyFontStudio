@@ -207,6 +207,36 @@ describe("readArchive のエラー", () => {
     // 一覧から正しくない文字（2 文字・改行・絵文字）は除く
     expect(project.queue).toEqual(["口", "十", "A", "B", "C", "D"]);
   });
+  it("座標が範囲（-1000〜2000）の外の点を含むベクター・履歴は、その文字だけ飛ばす", async () => {
+    const far = {
+      points: [
+        [100, 100, 0.5],
+        [1e6, 100, 0.5],
+      ],
+      simulatePressure: false,
+    };
+    const buf = await zipOf({
+      "project.json": projectJson({
+        glyphs: [
+          { char: "口", codepoint: "U+53E3", file: vectorPath("U+53E3") },
+          { char: "A", codepoint: "U+0041", file: vectorPath("U+0041") },
+        ],
+        histories: [{ char: "口", codepoint: "U+53E3", file: "rawdata/history/U+53E3.json" }],
+        queue: ["口", "A"],
+      }),
+      [vectorPath("U+53E3")]: JSON.stringify(KUCHI),
+      [vectorPath("U+0041")]: JSON.stringify({ ...LATIN_A, strokes: [far] }),
+      "rawdata/history/U+53E3.json": JSON.stringify({
+        char: "口",
+        codepoint: "U+53E3",
+        history: { ops: [{ type: "add", stroke: far }], position: 1 },
+      }),
+    });
+    const { project, skipped } = await readArchive(buf);
+    expect(Object.keys(project.glyphs)).toEqual(["口"]);
+    expect(project.drawings).toEqual({});
+    expect(skipped.map((s) => s.char)).toEqual(["A", "口"]);
+  });
   it("フォント名が使えない文字だけなら初期値にする", async () => {
     const json = JSON.parse(projectJson());
     json.font.familyName = "日本語";
