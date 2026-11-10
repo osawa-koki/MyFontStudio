@@ -67,7 +67,8 @@ beforeEach(() => {
   writes.length = 0;
   nav.search = "";
   nav.replaced.length = 0;
-  useTabLockStore.getState().set("owner");
+  // Web Locks API のない環境と同じく、いつも保存できる（ロックのテストでは個別に変える）
+  useTabLockStore.getState().set("unsupported", null);
   useUiStore.setState({ toasts: [] });
   failure.error = null;
   useSaveStatusStore.getState().set({ failed: false, quota: false });
@@ -109,6 +110,40 @@ describe("useProjectPersistence", () => {
     await flushProjectSave();
     expect(hasPendingSave()).toBe(false);
     expect((await loadProject(kv, id))!.project.previewText).toBe("口十");
+    unmount();
+  });
+
+  it("ロックが取れるまで（pending）は保存せず、取れたらその間の変更を保存する。別のプロジェクトのロックでは保存しない", async () => {
+    const { unmount } = renderHook(() => useProjectPersistence());
+    const lock = useTabLockStore.getState();
+    lock.set("owner", "00000000-0000-4000-8000-000000000000");
+    const id = store().newProject("Pending");
+    act(() => void store().addChars(["口"]));
+    await flushProjectSave();
+    expect(db.has(projectKey(id))).toBe(false);
+    act(() => lock.set("pending", id));
+    act(() => void store().addChars(["十"]));
+    await flushProjectSave();
+    expect(db.has(projectKey(id))).toBe(false);
+    act(() => lock.set("owner", id));
+    await flushProjectSave();
+    expect((await loadProject(kv, id))!.project.queue).toEqual(["口", "十"]);
+    unmount();
+  });
+
+  it("待っている保存は、書く時点でロックを持っていなければ書かない", async () => {
+    vi.useFakeTimers();
+    const { unmount } = renderHook(() => useProjectPersistence());
+    const id = store().newProject("Later");
+    useTabLockStore.getState().set("owner", id);
+    act(() => void store().addChars(["口"]));
+    await flushProjectSave();
+    act(() => store().setPreviewText("ほかのタブに渡す前の文章"));
+    // 500ms 待っている間に、ほかのタブに引き継いだ
+    act(() => useTabLockStore.getState().set("released", id));
+    await vi.advanceTimersByTimeAsync(1000);
+    await flushProjectSave();
+    expect((await loadProject(kv, id))!.project.previewText).toBe("");
     unmount();
   });
 

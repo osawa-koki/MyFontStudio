@@ -3,6 +3,7 @@ import { downloadBlob } from "../lib/download";
 import { isoWithOffset } from "../lib/project/chars";
 import { openAsNewProject } from "./projects";
 import { useProjectStore } from "../store/projectStore";
+import { LOCKED_OUT_MESSAGE, isLockedOut } from "../store/tabLockStore";
 import { askDialog, notify } from "../store/uiStore";
 import { commitDraft } from "./glyphActions";
 import { TaskCancelledError, runInWorker } from "./worker";
@@ -16,6 +17,11 @@ let savingZip = false;
 
 /** 「zip で保存」（仕様 7.4）。描きかけの文字があれば、先に保存するか確かめる。保存の途中なら何もしない */
 export async function saveZip(): Promise<void> {
+  // ほかのタブで編集しているときは、このタブの古い内容で書き出さない
+  if (isLockedOut()) {
+    notify(LOCKED_OUT_MESSAGE);
+    return;
+  }
   if (savingZip) {
     notify("zip に保存しています。終わるまでお待ちください");
     return;
