@@ -251,7 +251,26 @@ describe("useProjectFromUrl", () => {
   it("uuid の形が正しくなければ invalid", () => {
     nav.search = "uuid=../x";
     const { result } = renderHook(() => useProjectFromUrl());
-    expect(result.current).toBe("invalid");
+    expect(result.current).toEqual({ state: "invalid" });
+  });
+
+  it("保存してあるのに読めなければ、空のプロジェクトとして開かず、元のデータを上書きしない", async () => {
+    const { unmount } = renderHook(() => useProjectPersistence());
+    const id = await openAsNewProject({ ...store().project, queue: ["口"], glyphs: { 口: KUCHI } });
+    useProjectStore.getState().closeProject();
+    // 新しい版の形式で保存されている（デプロイの前に開いた画面など）
+    const meta = db.get(projectKey(id)) as Record<string, unknown>;
+    db.set(projectKey(id), { ...meta, version: 99 });
+    nav.search = `uuid=${id}`;
+    const { result } = renderHook(() => useProjectFromUrl());
+    await waitFor(() => expect(result.current).toEqual({ state: "unreadable", reason: "newer" }));
+    expect(store().projectId).toBeNull();
+    // 何か操作しても、そのプロジェクトのキーには書き込まない
+    act(() => void store().addChars(["十"]));
+    await flushProjectSave();
+    expect((db.get(projectKey(id)) as { version: number }).version).toBe(99);
+    expect(db.has(glyphKey(id, "口"))).toBe(true);
+    unmount();
   });
 
   it("保存してあれば読み込み、保存していなければ新しく始めて知らせる", async () => {
@@ -259,14 +278,14 @@ describe("useProjectFromUrl", () => {
     useProjectStore.getState().closeProject();
     nav.search = `uuid=${id}`;
     const { result } = renderHook(() => useProjectFromUrl());
-    expect(result.current).toBe("loading");
-    await waitFor(() => expect(result.current).toBe("ready"));
+    expect(result.current).toEqual({ state: "loading" });
+    await waitFor(() => expect(result.current).toEqual({ state: "ready" }));
     expect(store().project.queue).toEqual(["口"]);
 
     const missing = "1c9f7d5f-3a2b-4d4c-8e6f-8b7c6d5e4f30";
     nav.search = `uuid=${missing}`;
     const next = renderHook(() => useProjectFromUrl());
-    await waitFor(() => expect(next.result.current).toBe("ready"));
+    await waitFor(() => expect(next.result.current).toEqual({ state: "ready" }));
     expect(store().projectId).toBe(missing);
     expect(
       useUiStore
