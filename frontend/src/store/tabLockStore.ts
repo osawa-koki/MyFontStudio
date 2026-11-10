@@ -3,12 +3,14 @@ import { create } from "zustand";
 /**
  * このタブが、開いているプロジェクトを編集できるか（同じプロジェクトを編集できるタブは 1 つだけ）
  * - unsupported：Web Locks API がない（確かめられないので、いつも編集できる）
- * - pending：確かめている・引き継いでいる途中（まだ保存しない。ロックが取れたら、その間の変更を保存する）
+ * - pending：プロジェクトを開いてロックを確かめている途中（すぐに終わる。まだ保存しない。ロックが取れたら、その間の変更を保存する）
+ * - takeover：「このタブで編集する」で、ほかのタブの編集を止めてもらっている途中（編集画面を出さない。読み直すまで古い内容のため）
  * - owner：このタブで編集している
  * - blocked：ほかのタブで編集している（あとから開いた）
  * - released：ほかのタブに引き継いだ（このタブでは編集を止めた）
  */
-export type TabLockStatus = "unsupported" | "pending" | "owner" | "blocked" | "released";
+export type TabLockStatus =
+  "unsupported" | "pending" | "takeover" | "owner" | "blocked" | "released";
 
 interface TabLockState {
   status: TabLockStatus;
@@ -16,6 +18,9 @@ interface TabLockState {
   projectId: string | null;
   /** projectId を省略すると、今のプロジェクトのまま状態だけを変える */
   set(status: TabLockStatus, projectId?: string | null): void;
+  /** 引き継ぎを頼んだが、ほかのタブが応答せずロックを取れなかった（もう一度試すかを出す） */
+  takeoverFailed: boolean;
+  setTakeoverFailed(failed: boolean): void;
 }
 
 export const useTabLockStore = create<TabLockState>()((set) => ({
@@ -23,6 +28,8 @@ export const useTabLockStore = create<TabLockState>()((set) => ({
   projectId: null,
   set: (status, projectId) =>
     set((s) => ({ status, projectId: projectId === undefined ? s.projectId : projectId })),
+  takeoverFailed: false,
+  setTakeoverFailed: (takeoverFailed) => set({ takeoverFailed }),
 }));
 
 /**
@@ -38,12 +45,14 @@ export const canEditInThisTab = (projectId: string | null): boolean => {
 /** ほかのタブで編集しているので、このタブではプロジェクトを変える操作（設定・書き出しなど）をさせないか */
 export const isLockedOut = (): boolean => {
   const { status } = useTabLockStore.getState();
-  return status === "blocked" || status === "released";
+  return status === "blocked" || status === "released" || status === "takeover";
 };
 
 /** 画面用：isLockedOut */
 export const useLockedOut = (): boolean =>
-  useTabLockStore((s) => s.status === "blocked" || s.status === "released");
+  useTabLockStore(
+    (s) => s.status === "blocked" || s.status === "released" || s.status === "takeover",
+  );
 
 /** ほかのタブで編集しているときの説明（ボタンの title などに使う） */
 export const LOCKED_OUT_MESSAGE =
