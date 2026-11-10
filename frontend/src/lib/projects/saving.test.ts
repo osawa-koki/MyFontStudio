@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createEmptyProject } from "../project/project";
-import { saveTiming, type SaveState } from "./saving";
+import { isQuotaError, saveFailedMessage, saveTiming, type SaveState } from "./saving";
 
 const base = (): SaveState => ({ projectId: "a", project: createEmptyProject(), dirty: false });
 
@@ -28,5 +28,15 @@ describe("saveTiming", () => {
       "later",
     );
     expect(saveTiming({ ...s, dirty: true }, s, true)).toBe("later");
+  });
+});
+
+describe("保存の失敗", () => {
+  it("容量の不足（QuotaExceededError）を見分け、文言で zip での保存を案内する", () => {
+    expect(isQuotaError(new DOMException("x", "QuotaExceededError"))).toBe(true);
+    expect(isQuotaError(new Error("x"))).toBe(false);
+    expect(isQuotaError(null)).toBe(false);
+    expect(saveFailedMessage(true)).toMatch(/容量.*zip で保存/);
+    expect(saveFailedMessage(false)).toMatch(/zip で保存/);
   });
 });

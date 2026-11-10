@@ -19,7 +19,7 @@
   - `src/types/project.ts`：プロジェクト・グリフの型（zip の JSON と同じ形）
   - `src/views/`・`src/components/`：画面（`src/pages/` は Next.js の Pages Router と衝突するので使わない）。入力・プレビューと、ストアを使う部品はクライアントコンポーネント（`"use client"`）。共通の外枠は `AppShell`。`DrawingCanvas` は 2 枚の Canvas（下：ガイド・お手本・確定したストローク、上：描いている途中）で、各ストロークの輪郭を nonzero で塗る
 - `Dockerfile`・`nginx/default.conf.template`・`render.yaml`：Node.js で静的エクスポート → 非 root の Nginx で配信（`/editor` と `/editor/` → `editor/index.html`、ないページは `404.html`、セキュリティヘッダー・CSP・`/healthz`）。Render 用
-  - CSP の `script-src` は、Next.js が HTML に埋め込むインラインのスクリプトの SHA-256（ビルド時に `frontend/scripts/csp-hashes.mjs` が集めて `/etc/nginx/csp.conf` に書く）。`'unsafe-inline'` にしない。CSP の中身は `frontend/scripts/csp.mjs` に 1 つだけ書く（Nginx の `set $csp` の行と合わせる）
+  - CSP の `script-src` は、Next.js が HTML に埋め込むインラインのスクリプトの SHA-256（ビルド時に `frontend/scripts/csp-hashes.mjs` が集めて `/etc/nginx/csp.conf` に書く）。`'unsafe-inline'` にしない。CSP の中身は `frontend/scripts/csp.mjs` の `contentSecurityPolicy()` だけに書く（`csp-hashes.mjs` がそこから Nginx の `set $csp "…";` の行を書き出し、`csp-meta.mjs` が GitHub Pages の `<meta>` を入れる。`e2e/csp.spec.ts` で、ヘッダー・`<meta>` が完全に一致することを確かめる）
   - GitHub Pages はヘッダーを付けられないので、`pages.yml` が `scripts/csp-meta.mjs` で HTML に CSP の `<meta>` を入れる
 - `e2e/`：動いているサーバーに対する Playwright のテスト。Chromium・Firefox・WebKit・iPad（WebKit）で流す（Nginx の応答・ヘッダーの `server.spec.ts` は Chromium だけ）。テストは相対パス（`page.goto("./editor")`）で開き、`PAGES=1`・`BASE_URL=http://…/MyFontStudio/` で GitHub Pages 用のビルドに対しても流せる。自動保存は時間で待たず、`storage.ts` の `waitForStored` で IndexedDB を読んで待つ。Canvas に描くときは `drawing.ts`（Canvas を画面の中央に出してから描く）。応答とヘッダー（`server.spec.ts`）、ブラウザでの操作（`ui.spec.ts`・`editor.spec.ts`・`preview.spec.ts`・`archive.spec.ts`・`projects.spec.ts`・`guide.spec.ts`。`fixtures.ts` は beforeunload のダイアログを受け入れて数える。Canvas にはマウスで描く：`drawing.ts`）。`fixtures.ts` の `test` を使うと、コンソールのエラー（CSP の違反など）があれば失敗する
 - `docs/demo.gif`：README のデモの GIF。録画は 800px・5fps・64 色の 2 パスの GIF にする（元の録画は `docs/demo.mov` に置き、`ffmpeg -i docs/demo.mov -vf "fps=5,scale=800:-1:flags=lanczos,palettegen=max_colors=64" palette.png` → `ffmpeg -i docs/demo.mov -i palette.png -lavfi "fps=5,scale=800:-1:flags=lanczos[x];[x][1:v]paletteuse" docs/demo.gif`）。元の録画はリポジトリに入れない（`.gitignore` の `*.mov`）
@@ -105,7 +105,7 @@ PAGES=1 BASE_URL=http://localhost:8099/MyFontStudio/ npx playwright test --proje
 
 | 先 | トリガー | 内容 |
 |---|---|---|
-| GHCR（`ghcr.io/osawa-koki/myfontstudio`） | `main` への push のうち、`frontend/`・`nginx/`・`Dockerfile`・`.dockerignore`・`publish.yml` が変わったとき、週 1 回（月曜 3:00 JST）、手動（`publish.yml`） | linux/amd64・linux/arm64 のイメージをビルド（画面のビルドはビルドするマシンのアーキテクチャで行い、実行のステージは QEMU で作る。実行のステージはキャッシュなしで、`apk upgrade` で Alpine のセキュリティ更新を入れる）してプッシュ（タグ `main`・`sha-<コミット>`）し、Trivy でアーキテクチャごとに調べ（修正済みの CRITICAL があれば失敗）、直近の 5 つ以外のバージョンを消す。イメージ名は小文字（リポジトリ名は大文字を含むため、ワークフローで小文字にする） |
+| GHCR（`ghcr.io/osawa-koki/myfontstudio`） | `main` への push のうち、`frontend/`・`nginx/`・`Dockerfile`・`.dockerignore`・`publish.yml` が変わったとき、週 1 回（月曜 3:00 JST）、手動（`publish.yml`） | linux/amd64・linux/arm64 のイメージをビルド（画面のビルドはビルドするマシンのアーキテクチャで行い、実行のステージは QEMU で作る。実行のステージはキャッシュなしで、`apk upgrade` で Alpine のセキュリティ更新を入れる）してプッシュ（タグ `main`・`sha-<コミット>`）し、Trivy でアーキテクチャごとに調べ（修正済みの CRITICAL があれば失敗）、直近の 5 回分（タグの付いたバージョン 5 個と、それらが参照するアーキテクチャごとのマニフェスト）だけを残して古いバージョンを消す（`.github/scripts/cleanup-ghcr.sh`。マニフェストを読めなければ何も消さない）。イメージ名は小文字（リポジトリ名は大文字を含むため、ワークフローで小文字にする） |
 | Render | `main` への push のうち、`frontend/`・`nginx/`・`Dockerfile`・`.dockerignore` が変わったとき（Render 側の自動デプロイ、`render.yaml` の `buildFilter`） | `render.yaml` の設定で Docker イメージをビルドして動かす |
 | GitHub Pages（https://osawa-koki.github.io/MyFontStudio/ ） | `main` への push のうち、`frontend/`・`pages.yml` が変わったとき、手動（`pages.yml`） | `BASE_PATH=/MyFontStudio`（Next.js の `basePath`）でビルドし、`frontend/out` をデプロイする |
 
@@ -123,7 +123,7 @@ PAGES=1 BASE_URL=http://localhost:8099/MyFontStudio/ npx playwright test --proje
 - **.ttf と .otf は同じ中間データから作る**：`GlyphOutline` と `FontSpec` を受け取り ArrayBuffer を返す。形式ごとの違いはアダプタ（`lib/font/ttf.ts`・`lib/font/otf.ts`）に閉じ込める。名前・メトリクス・OS/2 の値は、ライブラリで書き出したあとに `lib/font/sfnt.ts` でテーブルを差し替えて、両形式でそろえる（仕様 6.4）。
 - **座標**：Canvas とストロークは 0〜1000 の em 座標（y 下向き）。フォント座標は `fontX = x`、`fontY = 880 - y`（y 上向き、ベースライン 0）。
 - **編集できるタブは 1 つ**：`features/tabLock.ts`（Web Locks API のプロジェクトごとのロック、BroadcastChannel での引き継ぎ）。ロックを持っていないタブ（`store/tabLockStore.ts` の `canEditInThisTab()` が false）では保存しない。IndexedDB への書き込みはタブをまたいで `withStorageLock` で順番に行う。
-- **プロジェクトの切り替え**：ヘッダーの `ProjectSwitcher`（一覧・新しいプロジェクト・ZIP の読み込み）と使い方ページの `GuideActions` は、`features/projectActions.ts`（`createProjectInteractive`・`confirmLeaveDrafts`）を共通に使う。描きかけのストロークがあれば切り替える前に確かめる。
+- **プロジェクトの切り替え**：ヘッダーの `ProjectSwitcher`（一覧・新しいプロジェクト・ZIP の読み込み）と使い方ページの `GuideActions` は、`features/projectActions.ts` の `createProjectInteractive`（フォント名を聞いて新しいプロジェクトを作る）を共通に使う。描きかけのストロークは描いた履歴としてプロジェクトに保存されるので、切り替える前には確かめない（切り替えたあとも、その文字の続きを描ける）。
 - **プロジェクトは UUID で管理する**：開いているプロジェクトの ID はストアの `projectId`。入力・プレビューへのリンクと移動には `projectHref()` で `?uuid=` を付ける。zip を開くと新しい UUID のプロジェクトになる（開いているものを上書きしない）。
 - **描いた履歴もプロジェクトのデータ**：`project.drawings`（文字ごと）はブラウザにも zip（`rawdata/history/`）にも入る。描いた線はすぐに保存する。
 - **zip のデータ形式**（`project.json`・ベクター JSON）を変えるときは `formatVersion` を上げ、古い形式のマイグレーションを書く。

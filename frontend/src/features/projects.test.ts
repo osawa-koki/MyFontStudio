@@ -3,17 +3,21 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { KUCHI } from "../lib/testing/fixtures";
 import { useProjectStore } from "../store/projectStore";
+import { useSaveStatusStore } from "../store/saveStatusStore";
 import { useTabLockStore } from "../store/tabLockStore";
 import { useUiStore } from "../store/uiStore";
 
 // IndexedDB（idb-keyval）をメモリの Map に差し替える
 const db = vi.hoisted(() => new Map<string, unknown>());
 const writes = vi.hoisted(() => [] as string[][]);
+// setMany を失敗させる（容量の不足などのテスト）
+const failure = vi.hoisted(() => ({ error: null as Error | null }));
 vi.mock("idb-keyval", () => ({
   get: async (k: string) => structuredClone(db.get(k)),
   getMany: async (ks: string[]) => ks.map((k) => structuredClone(db.get(k))),
   set: async (k: string, v: unknown) => void db.set(k, structuredClone(v)),
   setMany: async (entries: [string, unknown][]) => {
+    if (failure.error) throw failure.error;
     writes.push(entries.map(([k]) => k));
     entries.forEach(([k, v]) => db.set(k, structuredClone(v)));
   },
@@ -63,8 +67,11 @@ beforeEach(() => {
   writes.length = 0;
   nav.search = "";
   nav.replaced.length = 0;
-  useTabLockStore.getState().set("owner");
+  // Web Locks API のない環境と同じく、いつも保存できる（ロックのテストでは個別に変える）
+  useTabLockStore.getState().set("unsupported", null);
   useUiStore.setState({ toasts: [] });
+  failure.error = null;
+  useSaveStatusStore.getState().set({ failed: false, quota: false });
 });
 afterEach(async () => {
   await flushProjectSave();
@@ -106,6 +113,40 @@ describe("useProjectPersistence", () => {
     unmount();
   });
 
+  it("ロックが取れるまで（pending）は保存せず、取れたらその間の変更を保存する。別のプロジェクトのロックでは保存しない", async () => {
+    const { unmount } = renderHook(() => useProjectPersistence());
+    const lock = useTabLockStore.getState();
+    lock.set("owner", "00000000-0000-4000-8000-000000000000");
+    const id = store().newProject("Pending");
+    act(() => void store().addChars(["口"]));
+    await flushProjectSave();
+    expect(db.has(projectKey(id))).toBe(false);
+    act(() => lock.set("pending", id));
+    act(() => void store().addChars(["十"]));
+    await flushProjectSave();
+    expect(db.has(projectKey(id))).toBe(false);
+    act(() => lock.set("owner", id));
+    await flushProjectSave();
+    expect((await loadProject(kv, id))!.project.queue).toEqual(["口", "十"]);
+    unmount();
+  });
+
+  it("待っている保存は、書く時点でロックを持っていなければ書かない", async () => {
+    vi.useFakeTimers();
+    const { unmount } = renderHook(() => useProjectPersistence());
+    const id = store().newProject("Later");
+    useTabLockStore.getState().set("owner", id);
+    act(() => void store().addChars(["口"]));
+    await flushProjectSave();
+    act(() => store().setPreviewText("ほかのタブに渡す前の文章"));
+    // 500ms 待っている間に、ほかのタブに引き継いだ
+    act(() => useTabLockStore.getState().set("released", id));
+    await vi.advanceTimersByTimeAsync(1000);
+    await flushProjectSave();
+    expect((await loadProject(kv, id))!.project.previewText).toBe("");
+    unmount();
+  });
+
   it("ほかのタブで編集しているときは保存しない", async () => {
     renderHook(() => useProjectPersistence());
     const id = store().newProject("Blocked");
@@ -113,6 +154,42 @@ describe("useProjectPersistence", () => {
     act(() => void store().addChars(["あ"]));
     await flushProjectSave();
     expect(db.has(projectKey(id))).toBe(false);
+  });
+});
+
+describe("保存の失敗", () => {
+  const toasts = () => useUiStore.getState().toasts.map((t) => [t.kind, t.message]);
+
+  it("失敗したら 1 回だけ知らせ、保存できていないあいだは警告する。成功したら戻して知らせる", async () => {
+    const { unmount } = renderHook(() => useProjectPersistence());
+    const id = store().newProject("Fail");
+    failure.error = new Error("書けない");
+    act(() => void store().addChars(["口"]));
+    await flushProjectSave();
+    act(() => void store().addChars(["十"]));
+    await flushProjectSave();
+    expect(useSaveStatusStore.getState()).toMatchObject({ failed: true, quota: false });
+    expect(hasPendingSave()).toBe(true);
+    expect(toasts()).toEqual([
+      ["error", expect.stringMatching(/保存できませんでした.*zip で保存/)],
+    ]);
+
+    // 容量の不足に変わったら、改めて知らせる
+    failure.error = Object.assign(new Error("quota"), { name: "QuotaExceededError" });
+    act(() => void store().addChars(["日"]));
+    await flushProjectSave();
+    expect(useSaveStatusStore.getState().quota).toBe(true);
+    expect(toasts()[1]).toEqual(["error", expect.stringMatching(/容量が足りない/)]);
+
+    failure.error = null;
+    act(() => void store().addChars(["本"]));
+    await flushProjectSave();
+    expect(useSaveStatusStore.getState()).toMatchObject({ failed: false, quota: false });
+    expect(hasPendingSave()).toBe(false);
+    expect(toasts()[2]).toEqual(["success", "ブラウザに保存できるようになりました"]);
+    // 失敗していたあいだの変更も、次の保存でまとめて書かれる
+    expect((await loadProject(kv, id))!.project.queue).toEqual(["口", "十", "日", "本"]);
+    unmount();
   });
 });
 

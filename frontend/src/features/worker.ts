@@ -1,5 +1,5 @@
 import { ArchiveError } from "../lib/archive/common";
-import { renderGlyphPng } from "../lib/glyph/png";
+import { renderOutlinePng } from "../lib/glyph/png";
 import { useTaskStore } from "../store/taskStore";
 import type { WorkerRequest, WorkerResponse } from "../workers/font.worker";
 import type { Task, TaskResult } from "../workers/tasks";
@@ -128,7 +128,7 @@ export async function runInWorker<T extends Task>(
       const { runTask } = await import("../workers/tasks");
       return await runTask(task, {
         onProgress,
-        renderPng: typeof document !== "undefined" ? renderGlyphPng : undefined,
+        renderPng: typeof document !== "undefined" ? renderOutlinePng : undefined,
       });
     }
     const send = (target: Worker) =>
