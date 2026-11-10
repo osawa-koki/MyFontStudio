@@ -37,6 +37,8 @@ export interface ProjectState {
   /** 文字一覧から削除する（作成済みのグリフも消す） */
   removeChar(char: string): void;
   saveGlyph(glyph: GlyphData): void;
+  /** 作成済みの字形を消して未作成に戻す（一覧と描いた履歴は残す） */
+  removeGlyph(char: string): void;
   /** 文字の描いた履歴を変える（f に今の履歴を渡す。なければ保存済みの線から作った履歴） */
   updateDrawing(char: string, f: (h: DrawingHistory) => DrawingHistory): void;
   /** 文字の描いた履歴を、保存済みの線だけの状態に戻す（描きかけを捨てる） */
@@ -146,6 +148,15 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         dirty: true,
         revision: s.revision + 1,
       };
+    });
+  },
+
+  removeGlyph(char) {
+    set((s) => {
+      if (!s.project.glyphs[char]) return {};
+      const glyphs = { ...s.project.glyphs };
+      delete glyphs[char];
+      return { project: { ...s.project, glyphs }, dirty: true, revision: s.revision + 1 };
     });
   },
 

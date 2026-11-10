@@ -13,7 +13,8 @@ const samePen = (a: GlyphPen, b: GlyphPen) =>
   a.simulatePressure === b.simulatePressure;
 
 /**
- * 描いた線を、その文字のグリフとして保存する（保存時点のペンを記録する）。線がなければ false。
+ * 描いた線を、その文字のグリフとして保存する（保存時点のペンを記録する）。
+ * 線がないとき：作成済みの文字なら、字形を消して未作成に戻す（true）。未作成の文字なら何もしない（false）。
  * 線もペンも保存済みのグリフと同じなら、保存し直さない（「zip 未保存」・更新日時を変えない）が true を返す
  * （呼び出し側は次の文字へ進む）。ペンだけを変えたときは、文字全体の見た目が変わるので保存し直す。
  * 描いた履歴はそのまま残すので、保存したあとも元に戻す・やり直しができる
@@ -21,8 +22,13 @@ const samePen = (a: GlyphPen, b: GlyphPen) =>
 export function commitDraft(char: string): boolean {
   const history = historyFor(char);
   const strokes = strokesOf(history);
-  if (strokes.length === 0) return false;
   const store = useProjectStore.getState();
+  if (strokes.length === 0) {
+    // 作成済みの文字の線をすべて消して保存したら、未作成に戻す（「保存する」を選んでも何も起きない、をなくす）
+    if (!store.project.glyphs[char]) return false;
+    store.removeGlyph(char);
+    return true;
+  }
   const saved = store.project.glyphs[char];
   const pen: GlyphPen = {
     ...penFor(useEditorStore.getState(), char),

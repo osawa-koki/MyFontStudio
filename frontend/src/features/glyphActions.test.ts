@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { addStroke, createHistory } from "../lib/stroke/history";
+import { addStroke, clearStrokes, createHistory } from "../lib/stroke/history";
 import { KUCHI } from "../lib/testing/fixtures";
 import { useEditorStore } from "../store/editorStore";
 import { useProjectStore } from "../store/projectStore";
 import { commitDraft } from "./glyphActions";
+import { unsavedDraftChars } from "./unsavedWarning";
 
 const store = () => useProjectStore.getState();
 const stroke = { points: [[500, 500, 0.5]] as [number, number, number][] };
@@ -16,8 +17,20 @@ describe("commitDraft", () => {
     store().markSaved();
   });
 
-  it("線がなければ保存しない（false）", () => {
+  it("線がなければ、未作成の文字では何もしない（false）", () => {
     expect(commitDraft("未")).toBe(false);
+  });
+
+  it("作成済みの文字の線をすべて消して保存すると、未作成に戻す（一覧と描いた履歴は残す）", () => {
+    store().updateDrawing("口", (h) => clearStrokes(h));
+    expect(unsavedDraftChars()).toEqual(["口"]);
+    expect(commitDraft("口")).toBe(true);
+    expect(store().project.glyphs["口"]).toBeUndefined();
+    expect(store().project.queue).toContain("口");
+    expect(store().project.drawings["口"]).toBeDefined();
+    expect(store().dirty).toBe(true);
+    // 未作成に戻したので、描きかけとして確かめ続けない
+    expect(unsavedDraftChars()).toEqual([]);
   });
 
   it("線もペンも保存済みと同じなら、保存し直さない（zip 未保存・更新日時を変えない）", () => {
