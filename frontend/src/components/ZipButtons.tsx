@@ -2,6 +2,7 @@ import { useState } from "react";
 import { NO_PROJECT_MESSAGE, saveZip } from "../features/archiveActions";
 import { useProjectStore } from "../store/projectStore";
 import { LOCKED_OUT_MESSAGE, useLockedOut } from "../store/tabLockStore";
+import { useBusyMessage } from "../store/taskStore";
 
 /** ヘッダーの「zip で保存」（読み込みはプロジェクトの切り替えメニューから） */
 export function ZipButtons() {
@@ -9,12 +10,20 @@ export function ZipButtons() {
   // プロジェクトを開いていなければ、保存するものがない
   const hasProject = useProjectStore((s) => s.projectId !== null);
   const lockedOut = useLockedOut();
+  // ほかの重い処理（フォントのダウンロード・zip の読み込み）が動いている間は押せない
+  const busyTask = useBusyMessage();
   return (
     <button
       type="button"
       className="btn"
-      title={!hasProject ? NO_PROJECT_MESSAGE : lockedOut ? LOCKED_OUT_MESSAGE : "Ctrl/⌘+Shift+S"}
-      disabled={busy || !hasProject || lockedOut}
+      title={
+        !hasProject
+          ? NO_PROJECT_MESSAGE
+          : lockedOut
+            ? LOCKED_OUT_MESSAGE
+            : (busyTask ?? "Ctrl/⌘+Shift+S")
+      }
+      disabled={busy || !hasProject || lockedOut || busyTask !== null}
       onClick={() => {
         setBusy(true);
         void saveZip().finally(() => setBusy(false));
