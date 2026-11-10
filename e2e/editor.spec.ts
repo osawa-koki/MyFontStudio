@@ -256,6 +256,28 @@ test("Ctrl/Cmd+S で文字を保存し、Ctrl/Cmd+Shift+S で zip に保存す�
   expect((await downloading).suggestedFilename()).toMatch(/\.zip$/);
 });
 
+test("枠の外までドラッグした線は、枠の外にはみ出したことを知らせる", async ({ page }) => {
+  await page.goto("./editor");
+  await page.getByLabel("追加する文字列").fill("あ");
+  await page.getByLabel("追加する文字列").press("ControlOrMeta+Enter");
+  await drawStroke(page, [
+    [300, 500],
+    [700, 500],
+  ]);
+  await expect(page.getByTestId("outside-frame")).toHaveCount(0);
+  // Canvas の下の外まで動かす（描き始めにポインターをキャプチャするので、外でも記録が続く）。
+  // 記録する範囲の端（太さ 40 なら y=1050）より外で、画面（ビューポート）の中に収まる位置にする
+  // （Firefox は画面の外へのマウスの移動を伝えないため）
+  await drawStroke(page, [
+    [500, 500],
+    [500, 1080],
+  ]);
+  await expect(page.getByTestId("outside-frame")).toBeVisible();
+  // 元に戻すと消える
+  await page.getByRole("button", { name: "元に戻す" }).click();
+  await expect(page.getByTestId("outside-frame")).toHaveCount(0);
+});
+
 test("作成済みの文字を変えずに Enter で進んでも、保存し直さない（「zip 未保存」にならない）", async ({
   page,
 }) => {
