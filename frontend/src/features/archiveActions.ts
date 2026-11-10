@@ -1,5 +1,6 @@
 import { ArchiveError, archiveFileName } from "../lib/archive/common";
 import { downloadBlob } from "../lib/download";
+import { collectOutlinesAsync } from "../lib/font/outlines";
 import { isoWithOffset } from "../lib/project/chars";
 import { openAsNewProject } from "./projects";
 import { useProjectStore } from "../store/projectStore";
@@ -55,10 +56,19 @@ async function saveZipOnce(): Promise<void> {
   const { project, revision } = useProjectStore.getState();
   const exportCount = project.font.exportCount + 1;
   try {
-    // 輪郭・フォント・PNG・圧縮は Web Worker で行い、進み具合を出す
+    // 輪郭はグリフごとにキャッシュしてあるものを使い（ないものだけ、画面を止めないよう区切って計算する）、
+    // フォント・PNG・圧縮は Web Worker で行って進み具合を出す
+    const outlines = (await collectOutlinesAsync(project)) ?? [];
     const now = new Date();
     const zip = await runInWorker(
-      { kind: "saveZip", project, savedAt: isoWithOffset(now), exportCount, withPreviews: true },
+      {
+        kind: "saveZip",
+        project,
+        outlines,
+        savedAt: isoWithOffset(now),
+        exportCount,
+        withPreviews: true,
+      },
       { label: "zip に保存しています" },
     );
     downloadBlob(
