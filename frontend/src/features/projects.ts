@@ -160,8 +160,10 @@ export function useProjectPersistence(): void {
       const id = await migrateLegacyAutosave(idb);
       if (id) stored.add(id);
       // 削除・保存の途中で閉じて残った、どこからも参照されないキーを片付ける
-      const removed = await cleanupOrphanKeys(idb);
+      const { removed, restored } = await cleanupOrphanKeys(idb);
       if (removed > 0) console.info(`参照されないデータを ${removed} 個消しました`);
+      if (restored > 0)
+        console.info(`一覧になかったプロジェクトを ${restored} 個、一覧に戻しました`);
     }, false);
     const unsubscribe = useProjectStore.subscribe((state, prev) => {
       // いつ保存するかは lib/projects/saving.ts（ほかのタブで編集しているプロジェクトは、古い内容で上書きしないよう保存しない）

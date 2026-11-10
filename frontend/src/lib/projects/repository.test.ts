@@ -208,12 +208,12 @@ describe("ほかのタブでの削除と、参照されないキー", () => {
     expect(Object.keys(loaded!.project.glyphs).sort()).toEqual(["十", "口"].sort());
   });
 
-  it("一覧にないプロジェクトのメタデータと、メタデータが参照しないグリフ・履歴のキーを消す", async () => {
+  it("メタデータが参照しないグリフ・履歴のキーだけを消す。一覧にないメタデータは消さずに一覧へ戻す", async () => {
     const kv = memoryStore();
     const p = { ...sample(), drawings: { 口: createHistory(KUCHI.strokes) } };
     await saveProject(kv, ID_A, p, false);
     await saveProject(kv, ID_B, sample(), false);
-    // 削除の途中で閉じた（一覧からは外れたが、値が残った）
+    // 一覧から外れた（削除の途中で閉じた・一覧の書き込みが失われた）。データは残す
     await kv.set(
       INDEX_KEY,
       (await listProjects(kv)).filter((s) => s.id !== ID_B),
@@ -221,6 +221,9 @@ describe("ほかのタブでの削除と、参照されないキー", () => {
     // 保存の途中で閉じた（メタデータの一覧にない文字の値が残った）
     await kv.set(glyphKey(ID_A, "未"), KUCHI);
     await kv.set(drawingKey(ID_A, "未"), createHistory());
+    // メタデータのないプロジェクトの文字の値
+    const ID_D = "3e1b9f7b-5c4d-4f6e-8a81-ad9e8f7a6b52";
+    await kv.set(glyphKey(ID_D, "口"), KUCHI);
     // プロジェクトと関係のないキー・形式 1 の値は触らない
     await kv.set("other", 1);
     const ID_C = "2d0a8e6a-4b3c-4e5d-9f70-9c8d7e6f5a41";
@@ -231,15 +234,35 @@ describe("ほかのタブでの削除と、参照されないキー", () => {
     ]);
     await kv.set(glyphKey(ID_C, "口"), KUCHI);
 
-    expect(await cleanupOrphanKeys(kv)).toBe(4);
-    expect(kv.data.has(projectKey(ID_B))).toBe(false);
-    expect(kv.data.has(glyphKey(ID_B, "口"))).toBe(false);
+    expect(await cleanupOrphanKeys(kv)).toEqual({ removed: 3, restored: 1 });
     expect(kv.data.has(glyphKey(ID_A, "未"))).toBe(false);
     expect(kv.data.has(drawingKey(ID_A, "未"))).toBe(false);
+    expect(kv.data.has(glyphKey(ID_D, "口"))).toBe(false);
+    // 一覧から外れていたプロジェクトは、データを残して一覧に戻る
+    expect((await listProjects(kv)).map((s) => s.id)).toContain(ID_B);
+    expect(await loadProject(kv, ID_B)).toEqual({ project: sample(), dirty: false });
     expect(kv.data.has("other")).toBe(true);
     expect(kv.data.has(glyphKey(ID_C, "口"))).toBe(true);
     expect(await loadProject(kv, ID_A)).toEqual({ project: p, dirty: false });
-    expect(await cleanupOrphanKeys(kv)).toBe(0);
+    expect(await cleanupOrphanKeys(kv)).toEqual({ removed: 0, restored: 0 });
+  });
+
+  it("一覧を読めない（例外・値がない・配列でない）ときは、何も消さない", async () => {
+    const kv = memoryStore();
+    await saveProject(kv, ID_A, sample(), false);
+    const before = new Map(kv.data);
+    // 読み込みの例外はそのまま投げる（片付けない）
+    const broken: KeyValueStore = {
+      ...kv,
+      get: (k) => (k === INDEX_KEY ? Promise.reject(new Error("blocked")) : kv.get(k)),
+    };
+    await expect(cleanupOrphanKeys(broken)).rejects.toThrow("blocked");
+    kv.data.delete(INDEX_KEY);
+    expect(await cleanupOrphanKeys(kv)).toEqual({ removed: 0, restored: 0 });
+    kv.data.set(INDEX_KEY, "x");
+    expect(await cleanupOrphanKeys(kv)).toEqual({ removed: 0, restored: 0 });
+    kv.data.set(INDEX_KEY, before.get(INDEX_KEY));
+    expect(new Map(kv.data)).toEqual(before);
   });
 });
 
