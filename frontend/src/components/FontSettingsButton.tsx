@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { FAMILY_NAME_MAX, sanitizeFamilyName } from "../lib/project/project";
 import { useProjectStore } from "../store/projectStore";
+import { LOCKED_OUT_MESSAGE, useLockedOut } from "../store/tabLockStore";
 
 /** ヘッダーの「編集」。フォント名・日本語名・作者を編集する */
 export function FontSettingsButton() {
@@ -8,6 +9,7 @@ export function FontSettingsButton() {
   const setFontSettings = useProjectStore((s) => s.setFontSettings);
   const ref = useRef<HTMLDialogElement>(null);
   const [form, setForm] = useState(font);
+  const lockedOut = useLockedOut();
 
   const open = () => {
     setForm(font);
@@ -20,8 +22,9 @@ export function FontSettingsButton() {
     <>
       <button
         type="button"
-        className="rounded-md px-2 py-1 text-slate-600 hover:bg-slate-100"
-        title="フォント名・日本語名・作者を編集"
+        className="rounded-md px-2 py-1 text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+        title={lockedOut ? LOCKED_OUT_MESSAGE : "フォント名・日本語名・作者を編集"}
+        disabled={lockedOut}
         aria-label={`フォント名：${font.familyName}（クリックで編集）`}
         onClick={open}
       >

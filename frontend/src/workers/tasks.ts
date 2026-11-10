@@ -2,8 +2,7 @@
 // React・DOM に依存させない（PNG は OffscreenCanvas で描く）
 import { readArchive, buildArchive, type ReadResult } from "../lib/archive/archive";
 import { buildFont, type FontFormat } from "../lib/font/build";
-import { getGlyphOutline } from "../lib/glyph/outline";
-import type { GlyphOutline } from "../lib/glyph/types";
+import type { Contour, GlyphOutline } from "../lib/glyph/types";
 import type { FontSettings, Project } from "../types/project";
 
 export interface Progress {
@@ -19,6 +18,11 @@ export type Task =
       project: Project;
       savedAt: string;
       exportCount: number;
+      /**
+       * 作成済みのグリフの輪郭（画面のスレッドでグリフごとにキャッシュしたもの。輪郭のないグリフは入れない）。
+       * Worker に渡したグリフは別のオブジェクトになり、輪郭のキャッシュが当たらないので、計算し直さずに使う
+       */
+      outlines: GlyphOutline[];
       /** PNG を描く関数（描けない環境では渡さない。PNG なしの zip になる） */
       withPreviews: boolean;
     }
@@ -32,7 +36,8 @@ export type TaskResult<T extends Task> = T extends { kind: "buildFont" }
 
 export interface TaskOptions {
   onProgress?: (p: Progress) => void;
-  renderPng?: (glyph: Project["glyphs"][string]) => Promise<Uint8Array>;
+  /** 輪郭（フォント座標）から 256×256 の PNG を描く */
+  renderPng?: (contours: readonly Contour[]) => Promise<Uint8Array>;
 }
 
 /** 進み具合は、およそ 1% ごとにだけ知らせる（メッセージを送りすぎない） */
@@ -59,19 +64,12 @@ export async function runTask<T extends Task>(
     onProgress?.({ label: "zip を読み込んでいます", done: 0, total: 0 });
     return (await readArchive(task.buffer)) as TaskResult<T>;
   }
-  // zip の保存：輪郭 → フォント → PNG → 圧縮
-  const { project } = task;
+  // zip の保存：フォント → PNG → 圧縮（輪郭は画面のスレッドで計算したものを使う）
+  const { project, outlines } = task;
   const created = Object.values(project.glyphs).filter((g) => g.strokes.length > 0);
   const order = new Map(project.queue.map((c, i) => [c, i]));
   created.sort((a, b) => (order.get(a.char) ?? Infinity) - (order.get(b.char) ?? Infinity));
-
-  const reportOutline = progressReporter("輪郭を計算しています", created.length, onProgress);
-  const outlines: GlyphOutline[] = [];
-  created.forEach((g, i) => {
-    const o = getGlyphOutline(g);
-    if (o.contours.length > 0) outlines.push(o);
-    reportOutline(i + 1);
-  });
+  const outlineOf = new Map(outlines.map((o) => [o.char, o]));
 
   let ttf: ArrayBuffer | null = null;
   let otf: ArrayBuffer | null = null;
@@ -86,7 +84,9 @@ export async function runTask<T extends Task>(
   if (task.withPreviews && options.renderPng) {
     const reportPng = progressReporter("プレビュー画像を作っています", created.length, onProgress);
     for (let i = 0; i < created.length; i++) {
-      previews.set(created[i]!.char, await options.renderPng(created[i]!));
+      const { char } = created[i]!;
+      // 輪郭のないグリフ（小さすぎて消えたもの）は、白い画像にする
+      previews.set(char, await options.renderPng(outlineOf.get(char)?.contours ?? []));
       reportPng(i + 1);
     }
   }

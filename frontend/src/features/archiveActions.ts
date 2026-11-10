@@ -1,8 +1,10 @@
 import { ArchiveError, archiveFileName } from "../lib/archive/common";
 import { downloadBlob } from "../lib/download";
+import { collectOutlinesAsync } from "../lib/font/outlines";
 import { isoWithOffset } from "../lib/project/chars";
 import { openAsNewProject } from "./projects";
 import { useProjectStore } from "../store/projectStore";
+import { LOCKED_OUT_MESSAGE, isLockedOut } from "../store/tabLockStore";
 import { notify } from "../store/uiStore";
 import { confirmCommitDrafts } from "./draftPrompt";
 import { TaskCancelledError, runInWorker } from "./worker";
@@ -15,6 +17,11 @@ let savingZip = false;
 
 /** 「zip で保存」（仕様 7.4）。描きかけの文字があれば、先に保存するか確かめる。保存の途中なら何もしない */
 export async function saveZip(): Promise<void> {
+  // ほかのタブで編集しているときは、このタブの古い内容で書き出さない
+  if (isLockedOut()) {
+    notify(LOCKED_OUT_MESSAGE);
+    return;
+  }
   if (savingZip) {
     notify("zip に保存しています。終わるまでお待ちください");
     return;
@@ -34,10 +41,19 @@ async function saveZipOnce(): Promise<void> {
   const { project, revision } = useProjectStore.getState();
   const exportCount = project.font.exportCount + 1;
   try {
-    // 輪郭・フォント・PNG・圧縮は Web Worker で行い、進み具合を出す
+    // 輪郭はグリフごとにキャッシュしてあるものを使い（ないものだけ、画面を止めないよう区切って計算する）、
+    // フォント・PNG・圧縮は Web Worker で行って進み具合を出す
+    const outlines = (await collectOutlinesAsync(project)) ?? [];
     const now = new Date();
     const zip = await runInWorker(
-      { kind: "saveZip", project, savedAt: isoWithOffset(now), exportCount, withPreviews: true },
+      {
+        kind: "saveZip",
+        project,
+        outlines,
+        savedAt: isoWithOffset(now),
+        exportCount,
+        withPreviews: true,
+      },
       { label: "zip に保存しています" },
     );
     downloadBlob(
