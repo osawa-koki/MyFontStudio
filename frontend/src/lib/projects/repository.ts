@@ -304,7 +304,6 @@ export async function saveProject(
   }
 }
 
-/** プロジェクトを消す。先に一覧から外す（途中で閉じても、一覧に消えたプロジェクトが残らないように） */
 /**
  * 削除の途中のメタデータか。削除は 2 回に分けて書くので、1 回目で一覧から外すのと同時に、メタデータにこの印を付ける。
  * 2 回目（キーの削除）の前に閉じても、起動時の片付けで一覧に戻さずに消し、読み込みでも「ない」として扱う
@@ -315,6 +314,11 @@ export function isDeleting(raw: unknown): boolean {
   );
 }
 
+/**
+ * プロジェクトを消す。2 回に分けて書く：1 回目で一覧から外すのと同時に、メタデータに「削除中」の印を付け
+ * （1 つのトランザクション）、2 回目でメタデータとグリフ・描いた履歴のキーを消す。
+ * 2 回目の前に閉じても、一覧に消えたプロジェクトは残らず、起動時の片付けで一覧に戻さずに消す（isDeleting）
+ */
 export async function deleteProject(kv: KeyValueStore, id: string): Promise<void> {
   const list = (await listProjects(kv)).filter((s) => s.id !== id);
   const raw = await kv.get(projectKey(id)).catch(() => undefined);
