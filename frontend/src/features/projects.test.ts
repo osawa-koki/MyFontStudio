@@ -67,7 +67,8 @@ beforeEach(() => {
   writes.length = 0;
   nav.search = "";
   nav.replaced.length = 0;
-  useTabLockStore.getState().set("owner");
+  // Web Locks API のない環境と同じく、いつも保存できる（ロックのテストでは個別に変える）
+  useTabLockStore.getState().set("unsupported", null);
   useUiStore.setState({ toasts: [] });
   failure.error = null;
   useSaveStatusStore.getState().set({ failed: false, quota: false });
@@ -109,6 +110,61 @@ describe("useProjectPersistence", () => {
     await flushProjectSave();
     expect(hasPendingSave()).toBe(false);
     expect((await loadProject(kv, id))!.project.previewText).toBe("口十");
+    unmount();
+  });
+
+  it("ペンの太さのスライダーを続けて動かしても、待ってから 1 回だけ書く", async () => {
+    vi.useFakeTimers();
+    const { unmount } = renderHook(() => useProjectPersistence());
+    const id = store().newProject("Slider");
+    act(() => void store().addChars(["口"]));
+    await vi.advanceTimersByTimeAsync(0);
+    await flushProjectSave();
+    writes.length = 0;
+    for (let size = 41; size <= 80; size++) {
+      act(() => store().setDefaults({ pen: { ...store().project.defaults.pen, size } }));
+      await vi.advanceTimersByTimeAsync(20);
+    }
+    expect(writes).toEqual([]);
+    expect(hasPendingSave()).toBe(true);
+    await vi.advanceTimersByTimeAsync(600);
+    await flushProjectSave();
+    expect(writes).toHaveLength(1);
+    expect((await loadProject(kv, id))!.project.defaults.pen.size).toBe(80);
+    unmount();
+  });
+
+  it("ロックが取れるまで（pending）は保存せず、取れたらその間の変更を保存する。別のプロジェクトのロックでは保存しない", async () => {
+    const { unmount } = renderHook(() => useProjectPersistence());
+    const lock = useTabLockStore.getState();
+    lock.set("owner", "00000000-0000-4000-8000-000000000000");
+    const id = store().newProject("Pending");
+    act(() => void store().addChars(["口"]));
+    await flushProjectSave();
+    expect(db.has(projectKey(id))).toBe(false);
+    act(() => lock.set("pending", id));
+    act(() => void store().addChars(["十"]));
+    await flushProjectSave();
+    expect(db.has(projectKey(id))).toBe(false);
+    act(() => lock.set("owner", id));
+    await flushProjectSave();
+    expect((await loadProject(kv, id))!.project.queue).toEqual(["口", "十"]);
+    unmount();
+  });
+
+  it("待っている保存は、書く時点でロックを持っていなければ書かない", async () => {
+    vi.useFakeTimers();
+    const { unmount } = renderHook(() => useProjectPersistence());
+    const id = store().newProject("Later");
+    useTabLockStore.getState().set("owner", id);
+    act(() => void store().addChars(["口"]));
+    await flushProjectSave();
+    act(() => store().setPreviewText("ほかのタブに渡す前の文章"));
+    // 500ms 待っている間に、ほかのタブに引き継いだ
+    act(() => useTabLockStore.getState().set("released", id));
+    await vi.advanceTimersByTimeAsync(1000);
+    await flushProjectSave();
+    expect((await loadProject(kv, id))!.project.previewText).toBe("");
     unmount();
   });
 
@@ -195,7 +251,26 @@ describe("useProjectFromUrl", () => {
   it("uuid の形が正しくなければ invalid", () => {
     nav.search = "uuid=../x";
     const { result } = renderHook(() => useProjectFromUrl());
-    expect(result.current).toBe("invalid");
+    expect(result.current).toEqual({ state: "invalid" });
+  });
+
+  it("保存してあるのに読めなければ、空のプロジェクトとして開かず、元のデータを上書きしない", async () => {
+    const { unmount } = renderHook(() => useProjectPersistence());
+    const id = await openAsNewProject({ ...store().project, queue: ["口"], glyphs: { 口: KUCHI } });
+    useProjectStore.getState().closeProject();
+    // 新しい版の形式で保存されている（デプロイの前に開いた画面など）
+    const meta = db.get(projectKey(id)) as Record<string, unknown>;
+    db.set(projectKey(id), { ...meta, version: 99 });
+    nav.search = `uuid=${id}`;
+    const { result } = renderHook(() => useProjectFromUrl());
+    await waitFor(() => expect(result.current).toEqual({ state: "unreadable", reason: "newer" }));
+    expect(store().projectId).toBeNull();
+    // 何か操作しても、そのプロジェクトのキーには書き込まない
+    act(() => void store().addChars(["十"]));
+    await flushProjectSave();
+    expect((db.get(projectKey(id)) as { version: number }).version).toBe(99);
+    expect(db.has(glyphKey(id, "口"))).toBe(true);
+    unmount();
   });
 
   it("保存してあれば読み込み、保存していなければ新しく始めて知らせる", async () => {
@@ -203,14 +278,14 @@ describe("useProjectFromUrl", () => {
     useProjectStore.getState().closeProject();
     nav.search = `uuid=${id}`;
     const { result } = renderHook(() => useProjectFromUrl());
-    expect(result.current).toBe("loading");
-    await waitFor(() => expect(result.current).toBe("ready"));
+    expect(result.current).toEqual({ state: "loading" });
+    await waitFor(() => expect(result.current).toEqual({ state: "ready" }));
     expect(store().project.queue).toEqual(["口"]);
 
     const missing = "1c9f7d5f-3a2b-4d4c-8e6f-8b7c6d5e4f30";
     nav.search = `uuid=${missing}`;
     const next = renderHook(() => useProjectFromUrl());
-    await waitFor(() => expect(next.result.current).toBe("ready"));
+    await waitFor(() => expect(next.result.current).toEqual({ state: "ready" }));
     expect(store().projectId).toBe(missing);
     expect(
       useUiStore

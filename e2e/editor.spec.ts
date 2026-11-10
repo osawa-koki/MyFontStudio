@@ -255,3 +255,51 @@ test("Ctrl/Cmd+S で文字を保存し、Ctrl/Cmd+Shift+S で zip に保存す�
   await page.keyboard.press("ControlOrMeta+s");
   expect((await downloading).suggestedFilename()).toMatch(/\.zip$/);
 });
+
+test("枠の外までドラッグした線は、枠の外にはみ出したことを知らせる", async ({ page }) => {
+  await page.goto("./editor");
+  await page.getByLabel("追加する文字列").fill("あ");
+  await page.getByLabel("追加する文字列").press("ControlOrMeta+Enter");
+  await drawStroke(page, [
+    [300, 500],
+    [700, 500],
+  ]);
+  await expect(page.getByTestId("outside-frame")).toHaveCount(0);
+  // Canvas の下の外まで動かす（描き始めにポインターをキャプチャするので、外でも記録が続く）
+  await drawStroke(page, [
+    [500, 500],
+    [500, 1150],
+  ]);
+  await expect(page.getByTestId("outside-frame")).toBeVisible();
+  // 元に戻すと消える
+  await page.getByRole("button", { name: "元に戻す" }).click();
+  await expect(page.getByTestId("outside-frame")).toHaveCount(0);
+});
+
+test("作成済みの文字を変えずに Enter で進んでも、保存し直さない（「zip 未保存」にならない）", async ({
+  page,
+}) => {
+  await page.goto("./editor");
+  await page.getByLabel("追加する文字列").fill("あいう");
+  await page.getByLabel("追加する文字列").press("ControlOrMeta+Enter");
+  for (let i = 0; i < 2; i++) {
+    await drawStroke(page, [
+      [200, 500],
+      [800, 500],
+    ]);
+    await page.getByRole("button", { name: "保存", exact: true }).click();
+  }
+  const downloading = page.waitForEvent("download");
+  await page.getByRole("button", { name: "zip で保存" }).click();
+  await downloading;
+  await expect(page.getByText("zip 未保存")).toHaveCount(0);
+
+  // 作成済みの文字を開いて、変えずに Enter で次の未作成の文字へ
+  await chip(page, "あ").click();
+  await expect(page.getByTestId("current-char")).toHaveText("あ");
+  // 文字のボタンにフォーカスがあると Enter はボタンの動作になるので、フォーカスを外す
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("current-char")).toHaveText("う");
+  await expect(page.getByText("zip 未保存")).toHaveCount(0);
+});

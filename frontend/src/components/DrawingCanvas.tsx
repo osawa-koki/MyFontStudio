@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { ASCENDER, EM } from "../lib/glyph/constants";
 import { strokeToRing } from "../lib/glyph/outline";
 import { guideLines, type GuideLine } from "../lib/stroke/guides";
-import { appendPoint, clientToEm, resolvePressure } from "../lib/stroke/record";
+import { appendPoint, clampToDrawingArea, clientToEm, resolvePressure } from "../lib/stroke/record";
 import type { PenParams, Stroke, StrokePoint } from "../types/project";
 
 interface Props {
@@ -157,7 +157,11 @@ export function DrawingCanvas(props: Props) {
     const rect = canvas.getBoundingClientRect();
     const events = e.nativeEvent.getCoalescedEvents?.() ?? [];
     for (const ev of events.length > 0 ? events : [e.nativeEvent]) {
-      const [x, y] = clientToEm(ev.clientX, ev.clientY, rect);
+      // Canvas の外までペンを動かしても、記録するのは Windows で欠けない範囲まで
+      const [x, y] = clampToDrawingArea(
+        ...clientToEm(ev.clientX, ev.clientY, rect),
+        latest.current.pen,
+      );
       const { pressure } = resolvePressure(ev.pointerType, ev.pressure, latest.current.usePressure);
       appendPoint(cur.points, x, y, pressure);
     }
