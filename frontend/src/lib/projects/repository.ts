@@ -18,6 +18,8 @@ export interface KeyValueStore {
   setMany(entries: [string, unknown][]): Promise<void>;
   del(key: string): Promise<void>;
   delMany(keys: string[]): Promise<void>;
+  /** すべてのキー（参照されないキーの片付けに使う） */
+  keys(): Promise<unknown[]>;
 }
 
 export const INDEX_KEY = "myfontstudio:projects";
@@ -161,36 +163,86 @@ export async function listProjects(kv: KeyValueStore): Promise<ProjectSummary[]>
 /** 文字の一覧のうち、キーに使える 1 文字のものだけ */
 const singleChars = (chars: readonly string[]) => chars.filter((c) => Array.from(c).length === 1);
 
+/**
+ * 保存してあるプロジェクトを読めないときの理由
+ * - error：保存先を読めなかった（IndexedDB の一時的なエラーなど）
+ * - invalid：データの形が正しくない（一部が壊れている・一覧にあるのにデータがない）
+ * - newer：新しい版のアプリで保存した形式（デプロイの前に開いた画面など）
+ */
+export type UnreadableReason = "error" | "invalid" | "newer";
+
+/** 保存してあるのに読めない（空のプロジェクトとして開いて、元のデータを上書きしないよう、「ない」と区別する） */
+export class ProjectUnreadableError extends Error {
+  constructor(readonly reason: UnreadableReason) {
+    super(unreadableMessage(reason));
+  }
+}
+
+/** 読めないときに利用者に出す文言 */
+export function unreadableMessage(reason: UnreadableReason): string {
+  switch (reason) {
+    case "newer":
+      return "新しい版のアプリで保存したプロジェクトです。ページを再読み込みしてから開いてください。";
+    case "invalid":
+      return "このブラウザに保存したデータの一部が壊れていて、開けません。zip で保存したファイルがあれば、そこから開いてください。";
+    default:
+      return "このブラウザの保存先を読めませんでした。ページを再読み込みしてください。直らないときは、zip で保存したファイルから開いてください。";
+  }
+}
+
+/**
+ * 保存してあるプロジェクトを読む。保存していない（キーがない）なら null。
+ * 保存してあるのに読めないとき（読み込みのエラー・形が正しくない・新しい形式・一覧にあるのにデータがない）は
+ * ProjectUnreadableError（呼び出し側は空のプロジェクトとして開かず、そのキーに書き込まない）
+ */
 export async function loadProject(kv: KeyValueStore, id: string): Promise<StoredProject | null> {
   if (!isProjectId(id)) return null;
+  let raw: unknown;
   try {
-    const raw = await kv.get(projectKey(id));
-    const meta = metaSchema.safeParse(raw);
-    if (meta.success) {
-      const glyphChars = singleChars(meta.data.glyphChars);
-      const drawingChars = singleChars(meta.data.drawingChars);
-      const values = await kv.getMany([
+    raw = await kv.get(projectKey(id));
+  } catch {
+    throw new ProjectUnreadableError("error");
+  }
+  if (raw === undefined) {
+    // 一覧にあるのにデータがないなら、「保存していない」ではない
+    if ((await listProjects(kv)).some((s) => s.id === id))
+      throw new ProjectUnreadableError("invalid");
+    return null;
+  }
+  const version = (raw as { version?: unknown } | null)?.version;
+  if (typeof version === "number" && version > STORED_VERSION) {
+    throw new ProjectUnreadableError("newer");
+  }
+  const meta = metaSchema.safeParse(raw);
+  if (meta.success) {
+    const glyphChars = singleChars(meta.data.glyphChars);
+    const drawingChars = singleChars(meta.data.drawingChars);
+    let values: unknown[];
+    try {
+      values = await kv.getMany([
         ...glyphChars.map((c) => glyphKey(id, c)),
         ...drawingChars.map((c) => drawingKey(id, c)),
       ]);
-      const glyphs: Record<string, unknown> = {};
-      const drawings: Record<string, unknown> = {};
-      glyphChars.forEach((c, i) => (glyphs[c] = values[i]));
-      drawingChars.forEach((c, i) => (drawings[c] = values[glyphChars.length + i]));
-      return {
-        project: sanitizeProject({ ...meta.data.project, glyphs, drawings }),
-        dirty: meta.data.dirty,
-      };
+    } catch {
+      throw new ProjectUnreadableError("error");
     }
-    // 形式 1：読んだら形式 2 に書き直す
-    const v1 = storedV1Schema.safeParse(raw);
-    if (!v1.success) return null;
-    const loaded = { project: sanitizeProject(v1.data.project), dirty: v1.data.dirty };
-    await saveProject(kv, id, loaded.project, loaded.dirty, new Date(v1.data.savedAt));
-    return loaded;
-  } catch {
-    return null;
+    const glyphs: Record<string, unknown> = {};
+    const drawings: Record<string, unknown> = {};
+    glyphChars.forEach((c, i) => (glyphs[c] = values[i]));
+    drawingChars.forEach((c, i) => (drawings[c] = values[glyphChars.length + i]));
+    return {
+      project: sanitizeProject({ ...meta.data.project, glyphs, drawings }),
+      dirty: meta.data.dirty,
+    };
   }
+  // 形式 1：読んだら形式 2 に書き直す（書き直せなくても、読めたものは開く。次の保存で書く）
+  const v1 = storedV1Schema.safeParse(raw);
+  if (!v1.success) throw new ProjectUnreadableError("invalid");
+  const loaded = { project: sanitizeProject(v1.data.project), dirty: v1.data.dirty };
+  await saveProject(kv, id, loaded.project, loaded.dirty, new Date(v1.data.savedAt)).catch(
+    () => {},
+  );
+  return loaded;
 }
 
 /**
@@ -206,6 +258,9 @@ export async function saveProject(
   previous?: Project,
 ): Promise<void> {
   if (!isProjectId(id)) throw new Error("プロジェクトの ID が正しくない");
+  // 前回の保存のあとにメタデータが消えていたら（ほかのタブで削除されたなど）、差分ではなく全体を書き直す。
+  // 差分だけを書くと、変わっていない文字のグリフ・描いた履歴が消えたままになり、文字が欠けたプロジェクトになる
+  if (previous && (await kv.get(projectKey(id))) === undefined) previous = undefined;
   const glyphChars = Object.keys(project.glyphs).filter((c) => Array.from(c).length === 1);
   const drawingChars = Object.keys(project.drawings).filter((c) => Array.from(c).length === 1);
   const entries: [string, unknown][] = [];
@@ -259,6 +314,72 @@ export async function deleteProject(kv: KeyValueStore, id: string): Promise<void
       ]
     : [];
   await kv.delMany([...keys, projectKey(id)]);
+}
+
+const PROJECT_PREFIX = "myfontstudio:project:";
+const CHAR_KEY = /^myfontstudio:project:([0-9a-f-]{36}):(glyph|drawing):(U\+[0-9A-F]{4,6})$/;
+const META_KEY = /^myfontstudio:project:([0-9a-f-]{36})$/;
+
+/**
+ * どこからも参照されないグリフ・描いた履歴のキーを消す（削除・保存の途中で閉じたときに残るもの）。
+ * 起動のたびに動き、元に戻せない処理なので、消すのは次のキーだけにする
+ * - メタデータのないプロジェクトのグリフ・描いた履歴
+ * - メタデータの文字の一覧（glyphChars・drawingChars）にないグリフ・描いた履歴
+ * 一覧を読めない（例外・値がない・配列でない）ときは何もしない（例外はそのまま投げる）。
+ * 一覧にないメタデータ（壊れていないもの）は消さずに一覧へ戻す。読めないメタデータのプロジェクトは触らない
+ */
+export async function cleanupOrphanKeys(
+  kv: KeyValueStore,
+): Promise<{ removed: number; restored: number }> {
+  const index = await kv.get(INDEX_KEY);
+  if (!Array.isArray(index)) return { removed: 0, restored: 0 };
+  const listed = new Set(
+    index.flatMap((x) => {
+      const id = (x as { id?: unknown } | null)?.id;
+      return typeof id === "string" ? [id] : [];
+    }),
+  );
+  const keys = (await kv.keys()).filter(
+    (k): k is string => typeof k === "string" && k.startsWith(PROJECT_PREFIX),
+  );
+  const metaIds = keys.flatMap((k) => META_KEY.exec(k)?.[1] ?? []);
+  const values = await kv.getMany(metaIds.map(projectKey));
+  const metas = new Map<string, { glyph: Set<string>; drawing: Set<string> }>();
+  const untouched = new Set<string>();
+  const restored: ProjectSummary[] = [];
+  metaIds.forEach((id, i) => {
+    const meta = metaSchema.safeParse(values[i]);
+    // 読めないメタデータ（形式 1 など）のプロジェクトは、文字のキーも触らない
+    if (!meta.success) {
+      untouched.add(id);
+      return;
+    }
+    const { project, glyphChars, drawingChars, savedAt } = meta.data;
+    if (!listed.has(id)) {
+      restored.push({
+        id,
+        familyName: project.font.familyName,
+        familyNameJa: project.font.familyNameJa,
+        charCount: project.queue.length,
+        glyphCount: glyphChars.length,
+        updatedAt: savedAt,
+      });
+    }
+    const labels = (chars: string[]) => new Set(singleChars(chars).map(toCodepointLabel));
+    metas.set(id, { glyph: labels(glyphChars), drawing: labels(drawingChars) });
+  });
+  const orphans: string[] = [];
+  for (const k of keys) {
+    const m = CHAR_KEY.exec(k);
+    if (!m) continue;
+    const [, id, kind, label] = m;
+    if (untouched.has(id!)) continue;
+    const meta = metas.get(id!);
+    if (!meta || !meta[kind as "glyph" | "drawing"].has(label!)) orphans.push(k);
+  }
+  if (restored.length > 0) await kv.set(INDEX_KEY, [...index, ...restored]);
+  if (orphans.length > 0) await kv.delMany(orphans);
+  return { removed: orphans.length, restored: restored.length };
 }
 
 /**

@@ -8,7 +8,7 @@ import { useProjectStore } from "../store/projectStore";
 import { LOCKED_OUT_MESSAGE, isLockedOut } from "../store/tabLockStore";
 import { notify } from "../store/uiStore";
 import { confirmCommitDrafts } from "./draftPrompt";
-import { TaskCancelledError, runInWorker } from "./worker";
+import { TaskBusyError, TaskCancelledError, runInWorker } from "./worker";
 
 /** 読み込める zip の大きさの上限（圧縮後） */
 const MAX_ZIP_BYTES = 200 * 1024 * 1024;
@@ -86,6 +86,10 @@ async function saveZipOnce(): Promise<void> {
       notify("zip の保存を取り消しました");
       return;
     }
+    if (e instanceof TaskBusyError) {
+      notify(e.message);
+      return;
+    }
     console.error(e);
     notify(`zip に保存できませんでした：${e instanceof Error ? e.message : String(e)}`, "error");
   }
@@ -125,6 +129,10 @@ export async function openZip(file: File): Promise<string | null> {
   } catch (e) {
     if (e instanceof TaskCancelledError) {
       notify("zip の読み込みを取り消しました");
+      return null;
+    }
+    if (e instanceof TaskBusyError) {
+      notify(e.message);
       return null;
     }
     const message = e instanceof ArchiveError ? e.message : "zip ファイルを読み込めませんでした";

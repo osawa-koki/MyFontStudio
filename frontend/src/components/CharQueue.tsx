@@ -24,7 +24,13 @@ interface Props {
 
 const LONG_PRESS_MS = 600;
 
-/** 文字一覧。作成済みは緑（サムネイル付き）、未作成はグレー、編集中は枠線。右クリック・長押しで削除。並び替え・絞り込みができる */
+/** 文字の削除の方法の説明（スクリーンリーダーにも伝える） */
+const DELETE_HELP_ID = "char-queue-delete-help";
+
+/**
+ * 文字一覧。作成済みは緑（サムネイル付き）、未作成はグレー、編集中は枠線。
+ * Delete・Backspace（キーボード）、右クリック、長押しで削除。並び替え・絞り込みができる
+ */
 export function CharQueue({ queue, glyphs, current, onSelect, onDelete }: Props) {
   const view = useQueueViewStore();
   const pressTimer = useRef(0);
@@ -139,6 +145,10 @@ export function CharQueue({ queue, glyphs, current, onSelect, onDelete }: Props)
           ))}
         </select>
       </div>
+      <p id={DELETE_HELP_ID} className="sr-only">
+        文字を選んで Delete キーまたは Backspace
+        キーを押すと、一覧から削除します（右クリック・長押しでも削除できます）
+      </p>
       {queue.length === 0 ? (
         <p className="rounded-md border border-dashed border-slate-300 p-4 text-center text-sm text-slate-500">
           上の入力欄に文字列を入力するか、プリセットを追加してください
@@ -168,10 +178,21 @@ export function CharQueue({ queue, glyphs, current, onSelect, onDelete }: Props)
                   } ${isCurrent ? "outline-3 outline-offset-1 outline-blue-600" : ""}`}
                   aria-label={`${c}（${toCodepointLabel(c)}、${done ? "作成済み" : "未作成"}${isCurrent ? "、編集中" : ""}）`}
                   aria-current={isCurrent ? "true" : undefined}
-                  title="クリックで編集、右クリック・長押しで削除"
+                  title="クリック・Enter で編集。Delete キー・右クリック・長押しで削除"
+                  aria-describedby={DELETE_HELP_ID}
                   onClick={() => {
                     if (longPressed.current) return;
                     onSelect(c);
+                  }}
+                  onKeyDown={(e) => {
+                    // キーボードだけでも削除できるように（変換中は除く）
+                    if (
+                      (e.key === "Delete" || e.key === "Backspace") &&
+                      !e.nativeEvent.isComposing
+                    ) {
+                      e.preventDefault();
+                      onDelete(c);
+                    }
                   }}
                   onContextMenu={(e) => {
                     e.preventDefault();

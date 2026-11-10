@@ -62,7 +62,8 @@ export function GuidePage() {
           <li>
             キーボードでも操作できます：Enter・Ctrl/⌘+S で保存、← で前の文字、→
             で次の未作成の文字（文字一覧に表示している順）、Ctrl/⌘+Z で元に戻す、Ctrl/⌘+Shift+S で
-            zip に保存。
+            zip に保存。文字一覧の文字は、Tab で選んで Delete
+            キーで削除できます（右クリック・長押しでも削除できます）。
           </li>
         </ul>
       </Section>

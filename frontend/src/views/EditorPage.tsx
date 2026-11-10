@@ -12,6 +12,7 @@ import { PRESETS, isCreated, nextUncreated, parseInputChars, prevChar } from "..
 import { toCodepointLabel } from "../lib/project/project";
 import { projectHref } from "../lib/projects/repository";
 import { canRedo, canUndo, isDirty, strokesOf } from "../lib/stroke/history";
+import { hasStrokeOutsideFrame } from "../lib/stroke/record";
 import { useEditorStore, useHistory, usePen } from "../store/editorStore";
 import { isFiltered, viewQueue, type QueueViewOptions } from "../lib/project/queueView";
 import { useQueueViewStore } from "../store/queueViewStore";
@@ -97,8 +98,22 @@ export function EditorPage() {
   };
 
   /** 編集中の文字を保存する。advance なら次の未作成の文字へ進む */
-  const save = (advance: boolean) => {
-    if (!char || !commitDraft(char)) return;
+  /**
+   * 編集中の文字を保存する。作成済みの文字の線をすべて消したときは、確かめてから未作成に戻す
+   * （confirmClear が false なら確かめない。移動のときのダイアログで「保存して移動」を選んだときなど）
+   */
+  const save = async (advance: boolean, confirmClear = true) => {
+    if (!char) return;
+    if (confirmClear && strokes.length === 0 && isCreated(glyphs, char)) {
+      const ok = await confirmDialog(
+        `「${char}」を未作成に戻しますか？`,
+        "線をすべて消したので、保存すると作成済みの字形を消して未作成に戻します（描いた線は「元に戻す」で戻せます）。",
+        "未作成に戻す",
+        "danger",
+      );
+      if (!ok) return;
+    }
+    if (!commitDraft(char)) return;
     if (advance) {
       const { project: p, setCurrentChar } = useProjectStore.getState();
       const view = viewOptions();
@@ -130,7 +145,7 @@ export function EditorPage() {
         cancelValue: "cancel",
       });
       if (value === "cancel") return;
-      if (value === "save") save(false);
+      if (value === "save") await save(false, false);
       else if (value === "discard") editor.discard(char);
     }
     project.setCurrentChar(target);
@@ -158,7 +173,7 @@ export function EditorPage() {
     const onKey = (e: KeyboardEvent) => {
       // Ctrl/Cmd+S はテキスト入力中も効かせる（テキストの編集と重ならないため）
       if (saveShortcut(e) === "save") {
-        if (char && !document.querySelector("dialog[open]")) save(true);
+        if (char && !document.querySelector("dialog[open]")) void save(true);
         return;
       }
       if (!char || isTyping(e.target) || e.isComposing) return;
@@ -176,7 +191,7 @@ export function EditorPage() {
         // ボタンにフォーカスがあるときの Enter はボタンの動作に任せる
         if (e.target instanceof HTMLButtonElement) return;
         e.preventDefault();
-        save(true);
+        void save(true);
       } else if (e.key === "ArrowRight") {
         e.preventDefault();
         skip();
@@ -205,7 +220,7 @@ export function EditorPage() {
           >
             <label className="text-sm text-slate-600" htmlFor="chars-input">
               追加する文字列
-              <span className="ml-2 text-xs text-slate-400">
+              <span className="ml-2 text-xs text-slate-500">
                 複数行でも入力できます（改行・空白は除きます）。Ctrl/⌘+Enter でも追加
               </span>
             </label>
@@ -288,6 +303,11 @@ export function EditorPage() {
               }
             }}
           />
+          {hasStrokeOutsideFrame(strokes) && (
+            <p className="text-xs text-amber-800" role="status" data-testid="outside-frame">
+              枠の外にはみ出した線があります。枠の外は表示されませんが、フォントには入ります（いらなければ元に戻してください）
+            </p>
+          )}
           <div className="flex flex-wrap justify-center gap-2">
             <button
               type="button"
@@ -336,11 +356,12 @@ export function EditorPage() {
             <button
               type="button"
               className="btn btn-primary min-w-24"
-              disabled={strokes.length === 0}
-              onClick={() => save(true)}
+              // 作成済みの文字の線をすべて消したときは、未作成に戻す
+              disabled={strokes.length === 0 && !isCreated(glyphs, char)}
+              onClick={() => void save(true)}
               title="Enter・Ctrl/⌘+S"
             >
-              保存
+              {strokes.length === 0 && isCreated(glyphs, char) ? "未作成に戻す" : "保存"}
             </button>
           </div>
           <PenSettings

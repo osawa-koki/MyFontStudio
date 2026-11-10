@@ -256,6 +256,49 @@ test("Ctrl/Cmd+S で文字を保存し、Ctrl/Cmd+Shift+S で zip に保存す�
   expect((await downloading).suggestedFilename()).toMatch(/\.zip$/);
 });
 
+test("文字一覧の文字は、キーボードだけで削除できる（Delete・Backspace）", async ({ page }) => {
+  await page.goto("./editor");
+  await page.getByLabel("追加する文字列").fill("あいう");
+  await page.getByLabel("追加する文字列").press("ControlOrMeta+Enter");
+  const list = page.getByRole("region", { name: "文字一覧" });
+  await expect(list.getByRole("listitem")).toHaveCount(3);
+  // 削除の方法はスクリーンリーダーにも伝える
+  await expect(chip(page, "い")).toHaveAccessibleDescription(/Delete キー/);
+
+  await chip(page, "い").focus();
+  await page.keyboard.press("Delete");
+  const dialog = page.getByRole("dialog", { name: "「い」を一覧から削除しますか？" });
+  await dialog.getByRole("button", { name: "削除" }).click();
+  await expect(list.getByRole("listitem")).toHaveCount(2);
+
+  await chip(page, "う").focus();
+  await page.keyboard.press("Backspace");
+  await page.getByRole("dialog").getByRole("button", { name: "キャンセル" }).click();
+  await expect(list.getByRole("listitem")).toHaveCount(2);
+});
+
+test("枠の外までドラッグした線は、枠の外にはみ出したことを知らせる", async ({ page }) => {
+  await page.goto("./editor");
+  await page.getByLabel("追加する文字列").fill("あ");
+  await page.getByLabel("追加する文字列").press("ControlOrMeta+Enter");
+  await drawStroke(page, [
+    [300, 500],
+    [700, 500],
+  ]);
+  await expect(page.getByTestId("outside-frame")).toHaveCount(0);
+  // Canvas の下の外まで動かす（描き始めにポインターをキャプチャするので、外でも記録が続く）。
+  // 記録する範囲の端（太さ 40 なら y=1050）より外で、画面（ビューポート）の中に収まる位置にする
+  // （Firefox は画面の外へのマウスの移動を伝えないため）
+  await drawStroke(page, [
+    [500, 500],
+    [500, 1080],
+  ]);
+  await expect(page.getByTestId("outside-frame")).toBeVisible();
+  // 元に戻すと消える
+  await page.getByRole("button", { name: "元に戻す" }).click();
+  await expect(page.getByTestId("outside-frame")).toHaveCount(0);
+});
+
 test("作成済みの文字を変えずに Enter で進んでも、保存し直さない（「zip 未保存」にならない）", async ({
   page,
 }) => {
@@ -282,6 +325,53 @@ test("作成済みの文字を変えずに Enter で進んでも、保存し直�
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("current-char")).toHaveText("う");
   await expect(page.getByText("zip 未保存")).toHaveCount(0);
+});
+
+test("作成済みの文字の線をすべて消すと、保存で未作成に戻せる（zip で保存の確認が出続けない）", async ({
+  page,
+}) => {
+  await page.goto("./editor");
+  await page.getByLabel("追加する文字列").fill("あい");
+  await page.getByLabel("追加する文字列").press("ControlOrMeta+Enter");
+  await drawStroke(page, [
+    [200, 500],
+    [800, 500],
+  ]);
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(page.getByLabel("登録済み文字数")).toHaveText("1 文字");
+
+  // 作成済みの「あ」の線をクリアすると、ボタンは「未作成に戻す」になる。確かめてから戻す
+  await chip(page, "あ").click();
+  await page.getByRole("button", { name: "クリア" }).click();
+  await page.getByRole("button", { name: "未作成に戻す" }).click();
+  await page
+    .getByRole("dialog", { name: "「あ」を未作成に戻しますか？" })
+    .getByRole("button", { name: "未作成に戻す" })
+    .click();
+  await expect(page.getByLabel("登録済み文字数")).toHaveText("0 文字");
+  await expect(chip(page, "あ")).toHaveAccessibleName(/未作成/);
+
+  // もう一度描いて保存し、線を消したまま zip で保存すると、確認の「保存する」で未作成に戻り、次は聞かれない
+  await chip(page, "あ").click();
+  await drawStroke(page, [
+    [200, 500],
+    [800, 500],
+  ]);
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await chip(page, "あ").click();
+  await page.getByRole("button", { name: "クリア" }).click();
+  let downloading = page.waitForEvent("download");
+  await page.getByRole("button", { name: "zip で保存" }).click();
+  await page
+    .getByRole("dialog", { name: "この文字も保存しますか？" })
+    .getByRole("button", { name: "保存する" })
+    .click();
+  await downloading;
+  await expect(page.getByLabel("登録済み文字数")).toHaveText("0 文字");
+  downloading = page.waitForEvent("download");
+  await page.getByRole("button", { name: "zip で保存" }).click();
+  await downloading;
+  await expect(page.getByRole("dialog", { name: "この文字も保存しますか？" })).toHaveCount(0);
 });
 
 test("絞り込み・並び替えをしていると、保存したあとの移動と前へ・スキップは表示している順で進む", async ({
