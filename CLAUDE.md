@@ -92,7 +92,7 @@ PAGES=1 BASE_URL=http://localhost:8099/MyFontStudio/ npx playwright test --proje
 
 | ワークフロー | トリガー | 内容 |
 |---|---|---|
-| `frontend-ci.yml` | すべての PR | 型チェック（`next typegen` のあと `tsc`）、ESLint・Prettier、単体テストとカバレッジ（`lib/`・`store/`・`workers/tasks.ts`・`features/projects.ts` の行の 85% が下限。`features/` のフックは React Testing Library と happy-dom で、IndexedDB（idb-keyval）と `next/navigation` を差し替えてテストする）、生成したフォントの確認（fontTools・OTS）、ビルド（ルートと `basePath` の 2 通り） |
+| `frontend-ci.yml` | すべての PR | 型チェック（`next typegen` のあと `tsc`）、ESLint・Prettier、単体テストとカバレッジ（`lib/`・`store/`・`workers/tasks.ts`・`features/projects.ts` の行の 85% が下限。`features/` のフックは React Testing Library と happy-dom で、IndexedDB（idb-keyval）と `next/navigation` を差し替えてテストする）、性能の確認（`npm run perf`。CI のマシンは遅くばらつくので `PERF_LIMIT_FACTOR=3` で上限を 3 倍にし、結果をサマリーに出す）、生成したフォントの確認（fontTools・OTS）、ビルド（ルートと `basePath` の 2 通り） |
 | `docker-ci.yml` | すべての PR | E2E テストの型チェック・Lint。イメージをビルドしてコンテナを起動し、Playwright のテストを 4 つのブラウザで実行する。別のジョブで GitHub Pages 用のビルドを `/MyFontStudio/` で静的に配信し、Chromium で実行する（失敗したらレポートをアーティファクトに残す） |
 | `audit.yml` | `frontend/package*.json` を変えた PR、週 1 回（月曜 3:30 JST）、手動 | `npm audit --omit=dev --audit-level=high`（画面に入る依存。開発用を含む結果はサマリーに出すだけ） |
 
