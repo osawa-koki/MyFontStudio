@@ -12,13 +12,10 @@ server {
     gzip_types text/css text/plain application/javascript application/json image/svg+xml;
     gzip_min_length 1024;
 
-    # Next.js の静的エクスポートが HTML に埋め込むインラインのスクリプトの SHA-256（$csp_script_src）。
-    # Docker のビルドで scripts/csp-hashes.mjs が作る
+    # CSP（$csp）。中身は frontend/scripts/csp.mjs の contentSecurityPolicy() だけに書く（GitHub Pages の <meta> と同じ）。
+    # 外部への通信を一切させない（手書きのデータをブラウザの外に出さない）。script-src には、Next.js の静的エクスポートが
+    # HTML に埋め込むインラインのスクリプトの SHA-256 を入れる。Docker のビルドで scripts/csp-hashes.mjs が作る
     include /etc/nginx/csp.conf;
-
-    # 外部への通信を一切させない（手書きのデータをブラウザの外に出さない）。
-    # FontFace・Canvas・ダウンロードで blob: / data: を使う
-    set $csp "default-src 'self'; script-src $csp_script_src; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data: blob:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
     add_header Content-Security-Policy $csp always;
     add_header X-Content-Type-Options "nosniff" always;
